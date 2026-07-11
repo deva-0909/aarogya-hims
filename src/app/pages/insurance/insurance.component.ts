@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const STAGES = ['Pre-Auth', 'Submitted', 'Query', 'Approved', 'Settled'];
 const NEXT_STAGE: Record<string, string> = {
@@ -31,9 +32,10 @@ const emptyForm = (): ClaimForm => ({
 @Component({
   selector: 'app-insurance',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-6">
         <form (ngSubmit)="createClaim()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 xl:col-span-1 h-fit">
@@ -175,6 +177,24 @@ export class InsuranceComponent implements OnDestroy {
 
   nextStage(stage: string) {
     return NEXT_STAGE[stage ?? 'Pre-Auth'];
+  }
+
+  // Matches the reference's Insurance KPI row exactly (Active Claims /
+  // Approval Rate / Rejected / Total Sanctioned).
+  kpis(): KpiItem[] {
+    const all = this.claims.data();
+    const approved = all.filter((c: any) => c.stage === 'Approved' || c.stage === 'Settled').length;
+    const rejected = all.filter((c: any) => c.stage === 'Rejected').length;
+    const pending = all.filter((c: any) => !['Settled', 'Rejected'].includes(c.stage)).length;
+    const approvalRate = all.length ? Math.round((approved / all.length) * 100) : 0;
+    const totalSanctioned = all.reduce((sum: number, c: any) => sum + Number(c.approved_amount || 0), 0);
+
+    return [
+      { label: 'Active Claims', value: String(pending), icon: 'ph-clipboard-text', tintKey: 'blue' },
+      { label: 'Approval Rate', value: approvalRate + '%', icon: 'ph-check-circle', tintKey: 'green' },
+      { label: 'Rejected', value: String(rejected), icon: 'ph-x-circle', tintKey: 'red' },
+      { label: 'Total Sanctioned', value: '\u20b9' + totalSanctioned.toLocaleString('en-IN'), icon: 'ph-currency-circle-dollar', tintKey: 'teal' },
+    ];
   }
 
   stageStyle(stage: string) {

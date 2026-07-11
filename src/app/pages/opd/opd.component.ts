@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { StatusBadgeComponent } from '../../shared/status-badge.component';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const NEXT_STATUS: Record<string, string> = {
   Waiting: 'Called',
@@ -12,12 +13,18 @@ const NEXT_STATUS: Record<string, string> = {
 
 const COLUMNS = ['Waiting', 'Called', 'In Consultation', 'Completed'];
 
+function minutesSince(iso: string | null | undefined): number {
+  if (!iso) return 0;
+  return (Date.now() - new Date(iso).getTime()) / 60000;
+}
+
 @Component({
   selector: 'app-opd',
   standalone: true,
-  imports: [CommonModule, StatusBadgeComponent],
+  imports: [CommonModule, StatusBadgeComponent, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
 
       <div *ngIf="visits.loading()" class="text-body-2">Loading…</div>
 
@@ -67,6 +74,28 @@ export class OpdComponent implements OnDestroy {
 
   nextStatus(status: string) {
     return NEXT_STATUS[status];
+  }
+
+  // Matches the reference's OPD KPI row (Active Visits / Avg Consultation /
+  // Avg Wait / Completed Today) with real data. "Avg Consultation" in the
+  // reference is a static fake number (we don't track consult start/end
+  // timestamps) -- replaced with a real "Called" count instead of inventing
+  // a duration.
+  kpis(): KpiItem[] {
+    const all = this.visits.data();
+    const waiting = all.filter((v: any) => v.status === 'Waiting');
+    const avgWaitMin = waiting.length
+      ? Math.round(waiting.reduce((sum: number, v: any) => sum + minutesSince(v.created_at), 0) / waiting.length)
+      : 0;
+    const todayStart = new Date().toISOString().slice(0, 10);
+    const completedToday = all.filter((v: any) => v.status === 'Completed' && (v.created_at ?? '').slice(0, 10) === todayStart);
+
+    return [
+      { label: 'Active Visits', value: String(all.filter((v: any) => v.status !== 'Completed').length), icon: 'ph-users', tintKey: 'teal' },
+      { label: 'Called', value: String(all.filter((v: any) => v.status === 'Called').length), icon: 'ph-megaphone', tintKey: 'blue' },
+      { label: 'Avg Wait', value: waiting.length ? avgWaitMin + 'm' : '—', icon: 'ph-hourglass-medium', tintKey: 'amber' },
+      { label: 'Completed Today', value: String(completedToday.length), icon: 'ph-check-circle', tintKey: 'green' },
+    ];
   }
 
   async advance(visit: any) {

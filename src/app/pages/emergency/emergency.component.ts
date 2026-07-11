@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { Doctor, rosterFor } from '../../core/doctors';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const TRIAGE_LEVELS: { value: string; label: string }[] = [
   { value: 'red', label: 'Red — Immediate' },
@@ -38,9 +39,10 @@ const emptyForm = (): VisitForm => ({
 @Component({
   selector: 'app-emergency',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
 
       <div class="grid grid-cols-1 xl:grid-cols-4 gap-5 mb-6">
         <form (ngSubmit)="registerVisit()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 xl:col-span-1 h-fit">
@@ -209,6 +211,27 @@ export class EmergencyComponent implements OnDestroy {
 
   doctorOptions(): Doctor[] {
     return rosterFor(this.doctors.data());
+  }
+
+  // Matches the reference's ED KPI row (Patients in ED / Critical / Avg
+  // Door-to-Doc / Beds Available). "Beds Available" in the reference is a
+  // static fake number (we don't model ED bed capacity) -- replaced with a
+  // real MLC case count instead.
+  kpis(): KpiItem[] {
+    const active = this.visits.data().filter((v: any) => v.status !== 'Closed');
+    const critical = active.filter((v: any) => v.triage === 'red');
+    const inTriage = active.filter((v: any) => v.status === 'Triage' && v.created_at);
+    const avgDoorToDoc = inTriage.length
+      ? Math.round(inTriage.reduce((sum: number, v: any) => sum + (Date.now() - new Date(v.created_at).getTime()) / 60000, 0) / inTriage.length)
+      : 0;
+    const mlcCount = active.filter((v: any) => v.mlc).length;
+
+    return [
+      { label: 'Patients in ED', value: String(active.length), icon: 'ph-first-aid-kit', tintKey: 'blue' },
+      { label: 'Critical', value: String(critical.length), icon: 'ph-warning-octagon', tintKey: 'red' },
+      { label: 'Avg Door-to-Doc', value: inTriage.length ? avgDoorToDoc + 'm' : '—', icon: 'ph-timer', tintKey: 'amber' },
+      { label: 'MLC Cases', value: String(mlcCount), icon: 'ph-scales', tintKey: 'green' },
+    ];
   }
 
   itemsFor(stage: string) {

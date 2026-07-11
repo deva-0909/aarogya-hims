@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { Doctor, rosterFor } from '../../core/doctors';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const ACUITY_STYLE: Record<string, string> = {
   Stable: 'bg-success-bg text-success-fg',
@@ -24,9 +25,10 @@ const emptyVitalsForm = (): VitalsForm => ({ hr: '', bp: '', spo2: '', rr: '', t
 @Component({
   selector: 'app-icu',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
 
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         <div *ngFor="let bed of beds.data()"
@@ -170,6 +172,23 @@ export class IcuComponent implements OnDestroy {
 
   doctorOptions(): Doctor[] {
     return rosterFor(this.doctors.data());
+  }
+
+  // The reference has no custom ICU KPIs either (same generic-placeholder
+  // fallback as Laboratory) -- real metrics in the same visual style,
+  // using data we already track (acuity, ventilator status).
+  kpis(): KpiItem[] {
+    const all = this.beds.data();
+    const occupied = all.filter((b: any) => b.status === 'occupied');
+    const critical = occupied.filter((b: any) => b.acuity === 'Critical');
+    const ventilated = occupied.filter((b: any) => b.ventilated);
+    const available = all.filter((b: any) => b.status === 'available');
+    return [
+      { label: 'Occupied Beds', value: `${occupied.length}/${all.length}`, icon: 'ph-bed', tintKey: 'blue' },
+      { label: 'Critical Acuity', value: String(critical.length), icon: 'ph-warning-octagon', tintKey: 'red' },
+      { label: 'Ventilated', value: String(ventilated.length), icon: 'ph-wind', tintKey: 'indigo' },
+      { label: 'Available', value: String(available.length), icon: 'ph-check-circle', tintKey: 'green' },
+    ];
   }
 
   nurseOptions() {

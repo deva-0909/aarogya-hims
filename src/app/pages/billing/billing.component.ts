@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { StatusBadgeComponent } from '../../shared/status-badge.component';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const PAYMENT_MODES = ['Cash', 'UPI', 'Card', 'Insurance / TPA'];
 
@@ -25,9 +26,10 @@ function statusFor(total: number, paid: number): string {
 @Component({
   selector: 'app-billing',
   standalone: true,
-  imports: [CommonModule, FormsModule, StatusBadgeComponent],
+  imports: [CommonModule, FormsModule, StatusBadgeComponent, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <form (ngSubmit)="createInvoice()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 h-fit">
@@ -154,6 +156,28 @@ export class BillingComponent implements OnDestroy {
 
   total(inv: any) {
     return invoiceTotal(inv.items);
+  }
+
+  // Matches the reference's Billing KPI row exactly (Billed Today /
+  // Collected / Outstanding / Unpaid Invoices). "Billed Today" is date-
+  // filtered here using real timestamps, an improvement on the reference's
+  // demo data which doesn't distinguish by date.
+  kpis(): KpiItem[] {
+    const all = this.invoices.data();
+    const todayStart = new Date().toISOString().slice(0, 10);
+    const billedToday = all
+      .filter((i: any) => (i.created_at ?? '').slice(0, 10) === todayStart)
+      .reduce((sum: number, i: any) => sum + this.total(i), 0);
+    const collected = all.reduce((sum: number, i: any) => sum + Number(i.paid || 0), 0);
+    const outstanding = all.reduce((sum: number, i: any) => sum + (this.total(i) - Number(i.paid || 0)), 0);
+    const unpaid = all.filter((i: any) => i.status !== 'Paid').length;
+
+    return [
+      { label: 'Billed Today', value: '\u20b9' + billedToday.toLocaleString('en-IN'), icon: 'ph-receipt', tintKey: 'teal' },
+      { label: 'Collected', value: '\u20b9' + collected.toLocaleString('en-IN'), icon: 'ph-currency-circle-dollar', tintKey: 'green' },
+      { label: 'Outstanding', value: '\u20b9' + outstanding.toLocaleString('en-IN'), icon: 'ph-hourglass-medium', tintKey: 'amber' },
+      { label: 'Unpaid Invoices', value: String(unpaid), icon: 'ph-warning', tintKey: 'red' },
+    ];
   }
 
   async createInvoice() {

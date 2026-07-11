@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { Doctor, rosterFor } from '../../core/doctors';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const SAMPLE_TYPES = ['Blood', 'Urine', 'Stool', 'Sputum', 'Swab', 'CSF', 'Other'];
 const COMMON_TESTS = [
@@ -35,9 +36,10 @@ const emptyForm = (): OrderForm => ({ patient: '', mrn: '', test: '', sample: SA
 @Component({
   selector: 'app-laboratory',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
 
       <div class="grid grid-cols-1 xl:grid-cols-4 gap-5 mb-6">
         <form (ngSubmit)="createOrder()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 xl:col-span-1 h-fit">
@@ -177,6 +179,22 @@ export class LaboratoryComponent implements OnDestroy {
 
   doctorOptions(): Doctor[] {
     return rosterFor(this.doctors.data());
+  }
+
+  // The reference prototype doesn't define custom KPIs for Laboratory (it
+  // falls back to a generic placeholder row) -- these are real, useful
+  // metrics in the same visual style rather than replicating a meaningless
+  // placeholder.
+  kpis(): KpiItem[] {
+    const all = this.orders.data();
+    const todayStart = new Date().toISOString().slice(0, 10);
+    const reportedToday = all.filter((o: any) => o.stage === 'Reported' && (o.created_at ?? '').slice(0, 10) === todayStart);
+    return [
+      { label: 'Pending Orders', value: String(all.filter((o: any) => o.stage !== 'Validated').length), icon: 'ph-flask', tintKey: 'blue' },
+      { label: 'In Process', value: String(all.filter((o: any) => o.stage === 'In Process').length), icon: 'ph-hourglass-medium', tintKey: 'amber' },
+      { label: 'Reported Today', value: String(reportedToday.length), icon: 'ph-check-circle', tintKey: 'green' },
+      { label: 'Critical Flagged', value: String(all.filter((o: any) => o.critical).length), icon: 'ph-warning-circle', tintKey: 'red' },
+    ];
   }
 
   itemsFor(stage: string) {

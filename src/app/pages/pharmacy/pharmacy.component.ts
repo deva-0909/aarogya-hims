@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { Doctor, rosterFor } from '../../core/doctors';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 interface RxItem {
   drug: string;
@@ -46,9 +47,10 @@ function emptyForm(): RxForm {
 @Component({
   selector: 'app-pharmacy',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-6">
         <!-- New prescription -->
@@ -212,6 +214,23 @@ export class PharmacyComponent implements OnDestroy {
     return rosterFor(this.doctors.data());
   }
 
+  // Matches the reference's Pharmacy KPI row (In Queue / Dispensed Today /
+  // Low Stock / Expiring Soon). "Expiring Soon" in the reference tracks
+  // batch expiry dates, which our simplified inventory model doesn't
+  // capture -- replaced with a real STAT-priority queue count instead of
+  // fabricating expiry data.
+  kpis(): KpiItem[] {
+    const rx = this.prescriptions.data();
+    const todayStart = new Date().toISOString().slice(0, 10);
+    const dispensedToday = rx.filter((r: any) => r.status === 'Dispensed' && (r.dispensed_at ?? '').slice(0, 10) === todayStart);
+    return [
+      { label: 'In Queue', value: String(rx.filter((r: any) => r.status !== 'Dispensed').length), icon: 'ph-stack', tintKey: 'blue' },
+      { label: 'Dispensed Today', value: String(dispensedToday.length), icon: 'ph-check-circle', tintKey: 'green' },
+      { label: 'Low Stock', value: String(this.inventory.data().filter((i: any) => i.reorder != null && i.stock <= i.reorder).length), icon: 'ph-trend-down', tintKey: 'amber' },
+      { label: 'STAT Orders', value: String(rx.filter((r: any) => r.priority === 'STAT' && r.status !== 'Dispensed').length), icon: 'ph-lightning', tintKey: 'red' },
+    ];
+  }
+
   itemsFor(col: string) {
     return this.prescriptions.data().filter((rx: any) => rx.status === col);
   }
@@ -284,7 +303,10 @@ export class PharmacyComponent implements OnDestroy {
       }
     }
 
-    const { error } = await client.from('prescriptions').update({ status: next }).eq('id', rx.id);
+    const patch: any = { status: next };
+    if (next === 'Dispensed') patch.dispensed_at = new Date().toISOString();
+
+    const { error } = await client.from('prescriptions').update(patch).eq('id', rx.id);
     if (error) console.error(error);
   }
 

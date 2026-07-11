@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { StatusBadgeComponent } from '../../shared/status-badge.component';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 import { Doctor, bookableDoctors, DOCTOR_STATUS_DOT } from '../../core/doctors';
 
 const DEPARTMENTS = [
@@ -18,9 +19,10 @@ interface RegForm {
 @Component({
   selector: 'app-front-office',
   standalone: true,
-  imports: [CommonModule, FormsModule, StatusBadgeComponent],
+  imports: [CommonModule, FormsModule, StatusBadgeComponent, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <form (ngSubmit)="handleRegister()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 lg:col-span-1 h-fit">
@@ -161,12 +163,29 @@ export class FrontOfficeComponent implements OnDestroy {
 
   registrations: RealtimeTableHandle<any>;
   doctors: RealtimeTableHandle<Doctor>;
+  invoices: RealtimeTableHandle<any>;
 
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.registrations = this.realtime.watch('front_desk_registrations', (q) =>
       q.order('created_at', { ascending: false }).limit(50)
     );
     this.doctors = this.realtime.watch<Doctor>('doctors', (q) => q.eq('active', true).order('full_name'));
+    this.invoices = this.realtime.watch('invoices');
+  }
+
+  // Matches the reference's Front Office KPI row (Registrations Today,
+  // Appointments, Walk-ins, Pending Bills) -- "Appointments"/"Walk-ins" map
+  // onto our real visit `type` field (Follow-up / New) as the closest real
+  // equivalent, since we don't track a separate appointment-booking concept.
+  kpis(): KpiItem[] {
+    const todayStart = new Date().toISOString().slice(0, 10);
+    const today = this.registrations.data().filter((r: any) => (r.created_at ?? '').slice(0, 10) === todayStart);
+    return [
+      { label: 'Registrations Today', value: String(today.length), icon: 'ph-user-plus', tintKey: 'blue' },
+      { label: 'Appointments', value: String(today.filter((r: any) => r.type === 'Follow-up').length), icon: 'ph-calendar-check', tintKey: 'teal' },
+      { label: 'Walk-ins', value: String(today.filter((r: any) => r.type === 'New').length), icon: 'ph-footprints', tintKey: 'indigo' },
+      { label: 'Pending Bills', value: String(this.invoices.data().filter((i: any) => i.status !== 'Paid').length), icon: 'ph-receipt', tintKey: 'amber' },
+    ];
   }
 
   // Doctors selectable for a *new* registration: on the roster, in this department, actually Available.
@@ -261,5 +280,6 @@ export class FrontOfficeComponent implements OnDestroy {
   ngOnDestroy() {
     this.registrations.dispose();
     this.doctors.dispose();
+    this.invoices.dispose();
   }
 }

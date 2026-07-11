@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { Doctor, bookableDoctors } from '../../core/doctors';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 // Exact colors from the reference prototype's BED color map.
 const BED_STYLE: Record<string, { bg: string; fg: string; brd: string }> = {
@@ -27,9 +28,10 @@ const emptyForm = (): AdmitForm => ({ name: '', mrn: '', age: '', sex: 'F', dx: 
 @Component({
   selector: 'app-ipd',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
       <div *ngIf="beds.loading()" class="text-body-2">Loading…</div>
 
       <!-- Legend, matching the reference exactly -->
@@ -163,6 +165,21 @@ export class IpdComponent implements OnDestroy {
 
   bedStyle(status: string) {
     return BED_STYLE[status] ?? BED_STYLE['cleaning'];
+  }
+
+  // Matches the reference's IPD KPI row exactly.
+  kpis(): KpiItem[] {
+    const all = this.beds.data();
+    const occ = all.filter((b: any) => b.status === 'occupied').length;
+    const avail = all.filter((b: any) => b.status === 'available').length;
+    const resv = all.filter((b: any) => b.status === 'reserved').length;
+    const occPct = all.length ? Math.round((occ / all.length) * 100) : 0;
+    return [
+      { label: 'Occupancy', value: occPct + '%', icon: 'ph-gauge', tintKey: 'teal' },
+      { label: 'Occupied', value: `${occ}/${all.length}`, icon: 'ph-bed', tintKey: 'blue' },
+      { label: 'Available', value: String(avail), icon: 'ph-check-circle', tintKey: 'green' },
+      { label: 'Reserved', value: String(resv), icon: 'ph-bookmark-simple', tintKey: 'amber' },
+    ];
   }
 
   caption(status: string) {

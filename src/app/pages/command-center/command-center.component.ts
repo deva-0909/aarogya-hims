@@ -2,28 +2,14 @@ import { Component, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
+import { TINT } from '../../core/tint';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
-// Exact TINT map from the reference prototype's KPI card helper.
-const TINT: Record<string, { fg: string; bg: string }> = {
-  teal: { fg: '#0d8c80', bg: '#dff1ef' },
-  blue: { fg: '#2c6ecb', bg: '#e4edfb' },
-  indigo: { fg: '#6b4bd6', bg: '#ece8fb' },
-  amber: { fg: '#d98412', bg: '#fbeed6' },
-  green: { fg: '#1d9a57', bg: '#ddf1e3' },
-  red: { fg: '#d64545', bg: '#fbe3e3' },
-  slate: { fg: '#51687d', bg: '#eaeef3' },
-  // Two colors used only by the department counter row (distinct from the
-  // KPI card palette above) -- kept exact to the reference rather than
-  // reusing the nearest existing tint.
-  cyan: { fg: '#3a8ab0', bg: '#e2f0f6' },
-  magenta: { fg: '#c2497a', bg: '#fbe6ef' },
-};
-
-interface FeaturedKpi {
+interface FeaturedKpiSource {
   label: string;
   value: () => string;
   icon: string;
-  tint: string;
+  tintKey: string;
 }
 
 interface Counter {
@@ -50,25 +36,12 @@ function formatMoney(rupees: number): string {
 @Component({
   selector: 'app-command-center',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, KpiRowComponent],
   template: `
     <div>
       <p class="text-[12.5px] text-muted-1 mb-5">Live snapshot across every module — click a card to jump straight there.</p>
 
-      <!-- Featured KPI row, matching the reference layout/colors exactly -->
-      <div class="grid gap-[14px] mb-[18px]" style="grid-template-columns:repeat(auto-fit,minmax(176px,1fr))">
-        <div *ngFor="let k of featuredKpis" class="bg-white border border-[#e7ecf2] rounded-[14px] p-[15px_16px]">
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-[11px] font-semibold tracking-[.4px] text-[#7d92a4] uppercase">{{ k.label }}</span>
-            <span class="w-8 h-8 rounded-[9px] flex items-center justify-center flex-none" [style.background]="TINT[k.tint].bg">
-              <i class="ph {{ k.icon }} text-[17px]" [style.color]="TINT[k.tint].fg"></i>
-            </span>
-          </div>
-          <div class="flex items-baseline gap-2 mt-[10px]">
-            <span class="font-mono font-semibold text-[25px] text-[#12303f]">{{ k.value() }}</span>
-          </div>
-        </div>
-      </div>
+      <app-kpi-row [items]="featuredKpiItems()"></app-kpi-row>
 
       <!-- Department counters row, matching the reference layout/colors exactly -->
       <div class="grid gap-3 mb-[18px]" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
@@ -111,8 +84,12 @@ export class CommandCenterComponent implements OnDestroy {
   private bloodInventory: RealtimeTableHandle<any>;
   private ambulanceTrips: RealtimeTableHandle<any>;
 
-  featuredKpis: FeaturedKpi[];
+  private featuredKpisSource: FeaturedKpiSource[];
   counters: Counter[];
+
+  featuredKpiItems(): KpiItem[] {
+    return this.featuredKpisSource.map((k) => ({ label: k.label, value: k.value(), icon: k.icon, tintKey: k.tintKey }));
+  }
 
   constructor(private realtime: RealtimeTableService) {
     this.opdVisits = this.watch('opd_visits');
@@ -132,9 +109,9 @@ export class CommandCenterComponent implements OnDestroy {
     // reference shows "+3%" style deltas versus a prior period we don't
     // track) -- shown as plain current values instead of inventing a
     // comparison.
-    this.featuredKpis = [
+    this.featuredKpisSource = [
       {
-        label: 'Bed Occupancy', icon: 'ph-bed', tint: 'teal',
+        label: 'Bed Occupancy', icon: 'ph-bed', tintKey: 'teal',
         value: () => {
           const all = this.beds.data();
           if (all.length === 0) return '—';
@@ -143,15 +120,15 @@ export class CommandCenterComponent implements OnDestroy {
         },
       },
       {
-        label: 'Admissions Today', icon: 'ph-sign-in', tint: 'blue',
+        label: 'Admissions Today', icon: 'ph-sign-in', tintKey: 'blue',
         value: () => String(this.admissions.data().filter((a: any) => isToday(a.admitted_at)).length),
       },
       {
-        label: 'OPD Visits Today', icon: 'ph-stethoscope', tint: 'indigo',
+        label: 'OPD Visits Today', icon: 'ph-stethoscope', tintKey: 'indigo',
         value: () => String(this.opdVisits.data().filter((v: any) => isToday(v.created_at)).length),
       },
       {
-        label: 'ED Avg Wait', icon: 'ph-timer', tint: 'amber',
+        label: 'ED Avg Wait', icon: 'ph-timer', tintKey: 'amber',
         value: () => {
           const active = this.edVisits.data().filter((v: any) => v.status !== 'Closed' && v.created_at);
           if (active.length === 0) return '—';
@@ -160,13 +137,13 @@ export class CommandCenterComponent implements OnDestroy {
         },
       },
       {
-        label: 'Revenue Today', icon: 'ph-currency-circle-dollar', tint: 'green',
+        label: 'Revenue Today', icon: 'ph-currency-circle-dollar', tintKey: 'green',
         value: () => formatMoney(
           this.payments.data().filter((p: any) => isToday(p.created_at)).reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0)
         ),
       },
       {
-        label: 'Discharges Today', icon: 'ph-sign-out', tint: 'slate',
+        label: 'Discharges Today', icon: 'ph-sign-out', tintKey: 'slate',
         value: () => String(this.admissions.data().filter((a: any) => isToday(a.discharged_at)).length),
       },
     ];
