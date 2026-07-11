@@ -17,7 +17,6 @@ interface Kpi {
   imports: [CommonModule, RouterLink],
   template: `
     <div>
-      <h1 class="text-xl font-semibold text-ink-1 mb-1">Command Center</h1>
       <p class="text-[12.5px] text-muted-1 mb-5">Live snapshot across every module — click a card to jump straight there.</p>
 
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">

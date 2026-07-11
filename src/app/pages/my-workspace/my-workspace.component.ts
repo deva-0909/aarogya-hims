@@ -22,7 +22,6 @@ const emptyForm = (): LeaveForm => ({ leave_type: LEAVE_TYPES[0], start_date: ''
   imports: [CommonModule, FormsModule],
   template: `
     <div>
-      <h1 class="text-xl font-semibold text-ink-1 mb-1">My Workspace</h1>
       <p class="text-[12.5px] text-muted-1 mb-4">
         No login in this demo — pick who you are below to see their leave history and submit requests on their behalf.
       </p>

@@ -49,7 +49,6 @@ function emptyForm(): RxForm {
   imports: [CommonModule, FormsModule],
   template: `
     <div>
-      <h1 class="text-xl font-semibold text-ink-1 mb-4">Pharmacy</h1>
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-6">
         <!-- New prescription -->

@@ -34,7 +34,6 @@ const emptyForm = (): RequestForm => ({
   imports: [CommonModule, FormsModule],
   template: `
     <div>
-      <h1 class="text-xl font-semibold text-ink-1 mb-4">Blood Bank</h1>
 
       <!-- Inventory -->
       <div class="bg-white border border-line-1 rounded-card overflow-hidden mb-6">

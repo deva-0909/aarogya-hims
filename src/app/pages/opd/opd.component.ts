@@ -18,7 +18,6 @@ const COLUMNS = ['Waiting', 'Called', 'In Consultation', 'Completed'];
   imports: [CommonModule, StatusBadgeComponent],
   template: `
     <div>
-      <h1 class="text-xl font-semibold text-ink-1 mb-4">OPD Queue</h1>
 
       <div *ngIf="visits.loading()" class="text-body-2">Loading…</div>
 

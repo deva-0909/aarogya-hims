@@ -17,7 +17,6 @@ const emptyForm = (): ItemForm => ({ name: '', category: CATEGORIES[0], stock: '
   imports: [CommonModule, FormsModule],
   template: `
     <div>
-      <h1 class="text-xl font-semibold text-ink-1 mb-4">Inventory & Supply Chain</h1>
 
       <div *ngIf="lowStockCount() > 0" class="bg-warning-bg text-warning-fg rounded-card px-4 py-2.5 text-sm font-medium mb-4 flex items-center gap-2">
         <i class="ph ph-warning-circle"></i>

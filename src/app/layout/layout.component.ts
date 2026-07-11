@@ -1,13 +1,24 @@
 import { Component, computed, OnDestroy, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { NavigationEnd, Router, RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
+import { filter } from 'rxjs/operators';
 import { RoleService } from '../core/role.service';
-import { groupedModulesForRole, roleLabel, routeFor, ROLES } from '../core/modules';
+import { SupabaseService } from '../core/supabase.service';
+import { groupedModulesForRole, roleLabel, roleTitle, routeFor, moduleByRoute, ROLES } from '../core/modules';
+
+interface PatientResult {
+  id: string;
+  name: string;
+  mrn: string;
+  status: string;
+  dept: string;
+}
 
 @Component({
   selector: 'app-layout',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [CommonModule, FormsModule, RouterOutlet, RouterLink, RouterLinkActive],
   template: `
     <div class="flex h-screen w-full bg-line-2 text-ink-2 text-sm overflow-hidden">
       <!-- Sidebar -->
@@ -50,29 +61,123 @@ import { groupedModulesForRole, roleLabel, routeFor, ROLES } from '../core/modul
 
       <!-- Main column -->
       <div class="flex-1 flex flex-col h-full min-w-0">
-        <header class="h-[52px] flex-none bg-white border-b border-[#e2e8ee] flex items-center gap-4 px-[22px]">
-          <div class="text-[12.5px] text-[#6b8196] font-medium">Aarogya HIMS · Live</div>
+        <header class="h-[60px] flex-none bg-white border-b border-[#e2e8ee] flex items-center gap-4 px-[22px] relative z-30">
+          <div class="text-[12.5px] text-[#6b8196] font-medium flex-none">{{ activeModule()?.name ?? 'Aarogya HIMS' }}</div>
           <div class="flex-1"></div>
-          <div class="text-right leading-[1.15]">
-            <div class="font-mono font-semibold text-[13px] text-[#14303f]">{{ clockTime() }}</div>
-            <div class="text-[10.5px] text-muted-1">{{ clockDate() }}</div>
+
+          <!-- Global patient search -->
+          <div class="relative w-[340px] max-w-[32vw]">
+            <div class="flex items-center gap-2 bg-[#f1f4f8] border border-[#e2e8ee] rounded-[9px] px-[11px] py-[7px]">
+              <i class="ph ph-magnifying-glass text-[#8aa0b4] text-[16px]"></i>
+              <input
+                [(ngModel)]="searchQuery"
+                (ngModelChange)="onSearchChange($event)"
+                (focus)="searchOpen = true"
+                placeholder="Search patients by name or MRN…"
+                class="border-none bg-transparent outline-none flex-1 text-[13px] text-[#14303f] min-w-0"
+              />
+            </div>
+            <div
+              *ngIf="searchOpen && searchQuery.length > 0"
+              class="absolute top-[46px] left-0 right-0 bg-white border border-[#e2e8ee] rounded-xl shadow-[0_14px_34px_rgba(18,40,55,.18)] p-1.5 z-40 max-h-[380px] overflow-y-auto"
+            >
+              <div class="flex items-center justify-between px-2.5 pt-1.5 pb-1">
+                <span class="text-[10px] font-bold tracking-[.6px] text-[#8aa0b4] uppercase">Patients</span>
+                <span class="text-[11px] text-[#9aabbb]">{{ searchResults.length }} found</span>
+              </div>
+              <div *ngIf="searchLoading" class="text-center text-[12.5px] text-[#9aabbb] py-4">Searching…</div>
+              <div
+                *ngFor="let p of searchResults"
+                class="flex items-center gap-[11px] px-2.5 py-2 rounded-[9px] cursor-pointer hover:bg-[#f1f4f8]"
+              >
+                <span class="w-[34px] h-[34px] rounded-full bg-[#e9eff6] flex items-center justify-center text-[12px] font-semibold text-[#3f6087] flex-none">
+                  {{ initials(p.name) }}
+                </span>
+                <div class="flex-1 min-w-0">
+                  <div class="text-[13px] font-semibold text-[#22384a]">{{ p.name }}</div>
+                  <div class="text-[11.5px] text-[#8094a6] truncate">{{ p.dept }}</div>
+                </div>
+                <div class="text-right flex-none">
+                  <div class="font-mono text-[11px] font-semibold text-[#5f7689]">{{ p.mrn }}</div>
+                  <div class="text-[10.5px] text-[#9aabbb]">{{ p.status }}</div>
+                </div>
+              </div>
+              <div *ngIf="!searchLoading && searchQuery.length > 0 && searchResults.length === 0" class="text-center text-[12.5px] text-[#9aabbb] py-4.5">
+                No patients match that search.
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-[9px] flex-none">
+            <span class="w-2 h-2 rounded-full bg-[#1d9a57] flex-none animate-pulse"></span>
+            <div class="text-right leading-[1.15]">
+              <div class="font-mono font-semibold text-[13px] text-[#14303f]">{{ clockTime() }}</div>
+              <div class="text-[10.5px] text-muted-1">{{ clockDate() }}</div>
+            </div>
+          </div>
+
+          <!-- Notification bell -->
+          <button class="relative w-[38px] h-[38px] rounded-[9px] border border-[#e2e8ee] bg-white flex items-center justify-center flex-none hover:bg-[#f7f9fb]">
+            <i class="ph ph-bell text-[18px] text-[#52677b]"></i>
+            <span class="absolute top-[7px] right-2 w-[7px] h-[7px] rounded-full bg-[#d64545]"></span>
+          </button>
+
+          <!-- Role switcher -->
+          <div class="relative flex-none">
+            <button
+              (click)="roleMenuOpen = !roleMenuOpen"
+              class="flex items-center gap-[9px] border border-[#e2e8ee] bg-white rounded-[9px] pl-[6px] pr-[9px] py-[5px] hover:bg-[#f7f9fb]"
+            >
+              <span class="w-[30px] h-[30px] rounded-[7px] bg-brand-dark flex items-center justify-center text-[11px] font-semibold text-[#7fd9cd] flex-none">
+                {{ roleInitials() }}
+              </span>
+              <span class="text-left leading-[1.2]">
+                <span class="block text-[12.5px] font-semibold text-[#1c3a4d]">{{ roleLabel(role()) }}</span>
+                <span class="block text-[10.5px] text-[#8094a6]">{{ roleTitle(role()) }}</span>
+              </span>
+              <i class="ph ph-caret-down text-[13px] text-[#8aa0b4]"></i>
+            </button>
+            <div
+              *ngIf="roleMenuOpen"
+              class="absolute top-[48px] right-0 w-[260px] bg-white border border-[#e2e8ee] rounded-xl shadow-[0_12px_30px_rgba(18,40,55,.16)] p-1.5 z-40"
+            >
+              <div class="text-[10px] font-bold tracking-[.6px] text-[#8aa0b4] uppercase px-2.5 pt-2 pb-1">Switch Role</div>
+              <div
+                *ngFor="let r of roleKeys"
+                (click)="selectRole(r)"
+                class="flex items-center gap-[10px] px-2.5 py-2 rounded-lg cursor-pointer hover:bg-[#f1f4f8]"
+                [class]="r === role() ? 'bg-[#eaf5f3]' : ''"
+              >
+                <span class="w-[30px] h-[30px] rounded-[7px] bg-line-2 flex items-center justify-center text-[11px] font-semibold text-[#3f6087] flex-none">
+                  {{ initialsFor(r) }}
+                </span>
+                <div class="flex-1 min-w-0">
+                  <div class="text-[13px] font-semibold text-[#22384a]">{{ roleLabel(r) }}</div>
+                  <div class="text-[11px] text-[#8094a6]">{{ scopeFor(r) }}</div>
+                </div>
+                <i *ngIf="r === role()" class="ph ph-check text-brand text-[15px]"></i>
+              </div>
+            </div>
           </div>
         </header>
 
-        <!-- Role tab bar: this is the whole "login" -- pick who you're acting as -->
-        <div class="h-[46px] flex-none bg-white border-b border-[#e2e8ee] flex items-center gap-1 px-[14px] overflow-x-auto">
-          <span class="text-[11px] font-semibold text-muted-1 mr-1 flex-none">VIEWING AS</span>
-          <button
-            *ngFor="let r of roleKeys"
-            (click)="setRole(r)"
-            class="flex-none px-3 py-1.5 rounded-pill text-[12.5px] font-medium whitespace-nowrap transition-colors"
-            [class]="r === role() ? 'bg-brand text-white' : 'bg-line-2 text-body-1 hover:bg-line-1'"
-          >
-            {{ roleLabel(r) }}
-          </button>
-        </div>
+        <main class="flex-1 overflow-y-auto px-6 pt-[22px] pb-[44px]">
+          <!-- Shell-level module header, shared by every page -->
+          <div *ngIf="activeModule() as mod" class="flex items-start gap-4 mb-[18px]">
+            <div class="w-[46px] h-[46px] rounded-xl bg-success-bg flex items-center justify-center flex-none">
+              <i class="ph {{ mod.icon }} text-[24px] text-brand"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-[10px] flex-wrap">
+                <h1 class="m-0 text-[21px] font-semibold text-[#12303f]">{{ mod.name }}</h1>
+                <span class="font-mono font-semibold text-[10.5px] text-[#7d93a6] bg-[#e7edf2] px-[9px] py-[3px] rounded-pill tracking-[.5px]">
+                  MODULE {{ mod.id }}
+                </span>
+              </div>
+              <p class="mt-[5px] mb-0 text-[13.5px] text-[#5f7689] max-w-[780px] leading-[1.45]">{{ mod.desc }}</p>
+            </div>
+          </div>
 
-        <main class="flex-1 overflow-y-auto p-6">
           <router-outlet></router-outlet>
         </main>
       </div>
@@ -82,28 +187,100 @@ import { groupedModulesForRole, roleLabel, routeFor, ROLES } from '../core/modul
 export class LayoutComponent implements OnInit, OnDestroy {
   private clockTimer: any;
   private readonly now = signal(new Date());
+  private routerSub: any;
+  private searchTimer: any;
 
   clockTime = computed(() => this.now().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
   clockDate = computed(() => this.now().toLocaleDateString());
 
   role = computed(() => this.roleService.role());
   groups = computed(() => groupedModulesForRole(this.role()));
+  activeModule = signal(moduleByRoute('front-office'));
 
   roleKeys = Object.keys(ROLES);
   roleLabel = roleLabel;
+  roleTitle = roleTitle;
   routeFor = routeFor;
+  roleMenuOpen = false;
 
-  constructor(public roleService: RoleService) {}
+  searchQuery = '';
+  searchOpen = false;
+  searchLoading = false;
+  searchResults: PatientResult[] = [];
+
+  constructor(
+    public roleService: RoleService,
+    private router: Router,
+    private supabaseService: SupabaseService
+  ) {}
 
   ngOnInit() {
     this.clockTimer = setInterval(() => this.now.set(new Date()), 30_000);
+    this.updateActiveModule(this.router.url);
+    this.routerSub = this.router.events.pipe(filter((e) => e instanceof NavigationEnd)).subscribe((e: any) => {
+      this.updateActiveModule(e.urlAfterRedirects ?? e.url);
+      this.roleMenuOpen = false;
+      this.searchOpen = false;
+    });
+  }
+
+  private updateActiveModule(url: string) {
+    const path = url.split('?')[0].replace(/^\//, '');
+    this.activeModule.set(moduleByRoute(path));
   }
 
   ngOnDestroy() {
     clearInterval(this.clockTimer);
+    this.routerSub?.unsubscribe();
+    clearTimeout(this.searchTimer);
   }
 
-  setRole(role: string) {
+  selectRole(role: string) {
     this.roleService.setRole(role);
+    this.roleMenuOpen = false;
+  }
+
+  roleInitials(): string {
+    return this.initialsFor(this.role() ?? '');
+  }
+
+  initialsFor(role: string): string {
+    return this.initials(roleLabel(role));
+  }
+
+  initials(text: string): string {
+    return text.split(' ').map((p) => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+  }
+
+  scopeFor(role: string): string {
+    const mods = ROLES[role]?.mods;
+    if (mods === null || mods === undefined) return 'All 27 modules';
+    return `${mods.length} module${mods.length === 1 ? '' : 's'}`;
+  }
+
+  onSearchChange(value: string) {
+    this.searchOpen = true;
+    clearTimeout(this.searchTimer);
+    if (!value.trim()) {
+      this.searchResults = [];
+      return;
+    }
+    this.searchLoading = true;
+    this.searchTimer = setTimeout(() => this.runSearch(value), 250);
+  }
+
+  private async runSearch(value: string) {
+    const { data, error } = await this.supabaseService.client
+      .from('patients')
+      .select('id, name, mrn, status, dept')
+      .or(`name.ilike.%${value}%,mrn.ilike.%${value}%`)
+      .limit(6);
+    this.searchLoading = false;
+    if (error) {
+      console.error(error);
+      this.searchResults = [];
+      return;
+    }
+    this.searchResults = data ?? [];
   }
 }

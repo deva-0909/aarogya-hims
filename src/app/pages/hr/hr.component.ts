@@ -22,7 +22,6 @@ const emptyForm = (): LeaveForm => ({ staff_id: '', leave_type: LEAVE_TYPES[0], 
   imports: [CommonModule, FormsModule],
   template: `
     <div>
-      <h1 class="text-xl font-semibold text-ink-1 mb-4">Human Resources</h1>
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-6">
         <!-- Staff directory -->

@@ -27,7 +27,6 @@ const emptyVitalsForm = (): VitalsForm => ({ hr: '', bp: '', spo2: '', rr: '', t
   imports: [CommonModule, FormsModule],
   template: `
     <div>
-      <h1 class="text-xl font-semibold text-ink-1 mb-4">ICU / Critical Care</h1>
 
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         <div *ngFor="let bed of beds.data()"

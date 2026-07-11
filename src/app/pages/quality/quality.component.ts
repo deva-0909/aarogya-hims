@@ -22,7 +22,6 @@ const emptyForm = (): IncidentForm => ({ description: '', reported_by_name: '' }
   imports: [CommonModule, FormsModule],
   template: `
     <div>
-      <h1 class="text-xl font-semibold text-ink-1 mb-4">Quality Assurance & Accreditation</h1>
       <p class="text-[12.5px] text-muted-1 mb-4 max-w-2xl">
         Patient safety incident reporting — visible only to Quality, HR, and Admin roles in a production
         deployment. Every deployment should keep this restricted; the demo-mode database policy applied

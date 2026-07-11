@@ -24,7 +24,6 @@ const emptyForm = (): AdmitForm => ({ name: '', mrn: '', age: '', sex: 'F', dx: 
   imports: [CommonModule, FormsModule],
   template: `
     <div>
-      <h1 class="text-xl font-semibold text-ink-1 mb-4">IPD / Wards — Bed Board</h1>
 
       <div *ngIf="beds.loading()" class="text-body-2">Loading…</div>
 

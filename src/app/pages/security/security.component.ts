@@ -15,7 +15,6 @@ const emptyForm = (): VisitorForm => ({ visitor_name: '', purpose: '', visiting:
   imports: [CommonModule, FormsModule],
   template: `
     <div>
-      <h1 class="text-xl font-semibold text-ink-1 mb-4">Security & Access Control</h1>
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
         <form (ngSubmit)="checkIn()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 xl:col-span-1 h-fit">
