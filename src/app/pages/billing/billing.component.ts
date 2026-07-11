@@ -7,6 +7,7 @@ import { StatusBadgeComponent } from '../../shared/status-badge.component';
 import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const PAYMENT_MODES = ['Cash', 'UPI', 'Card', 'Insurance / TPA'];
+type BillTab = 'invoices' | 'payments' | 'analytics';
 
 interface InvoiceForm {
   patient: string; mrn: string; dept: string; description: string; amount: string;
@@ -23,6 +24,10 @@ function statusFor(total: number, paid: number): string {
   return 'Paid';
 }
 
+function shortId(id: string, prefix: string): string {
+  return prefix + '-' + id.slice(0, 4).toUpperCase();
+}
+
 @Component({
   selector: 'app-billing',
   standalone: true,
@@ -31,9 +36,89 @@ function statusFor(total: number, paid: number): string {
     <div>
       <app-kpi-row [items]="kpis()"></app-kpi-row>
 
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <form (ngSubmit)="createInvoice()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 h-fit">
-          <h2 class="font-semibold text-ink-2 text-sm mb-1">New Invoice</h2>
+      <!-- Tab bar, matching the reference's 3-tab Billing view -->
+      <div class="flex items-center gap-2 mb-[14px]">
+        <button *ngFor="let t of tabs" (click)="activeTab = t.key"
+          class="flex items-center gap-[7px] rounded-[9px] px-[15px] py-2 text-[12.5px] font-semibold"
+          [style.background]="activeTab === t.key ? '#0d8c80' : '#fff'"
+          [style.color]="activeTab === t.key ? '#fff' : '#52677b'"
+          [style.border]="'1px solid ' + (activeTab === t.key ? '#0d8c80' : '#dde5ee')">
+          <i class="ph {{ t.icon }} text-[15px]"></i>{{ t.label }}
+        </button>
+        <div class="flex-1"></div>
+        <button (click)="showNewInvoice = true" class="bg-brand hover:bg-brand-hover text-white rounded-[9px] px-4 py-2 text-[12.5px] font-semibold">
+          + New Invoice
+        </button>
+      </div>
+
+      <!-- Invoices tab -->
+      <div *ngIf="activeTab === 'invoices'" class="flex flex-col gap-3">
+        <div *ngIf="invoices.data().length === 0" class="text-center text-body-2 text-sm py-8 bg-white border border-[#e7ecf2] rounded-[13px]">No invoices yet.</div>
+        <div *ngFor="let inv of invoices.data()" class="bg-white border border-[#e7ecf2] rounded-[13px] px-[17px] py-[14px] flex items-center gap-[14px]">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-[9px] flex-wrap">
+              <span class="font-mono font-semibold text-[12.5px] text-brand">{{ shortId(inv.id, 'INV') }}</span>
+              <span class="font-semibold text-[#22384a]">{{ inv.patient }}</span>
+              <app-status-badge [status]="inv.status"></app-status-badge>
+            </div>
+            <div class="text-[11.5px] text-[#8094a6] mt-[3px]">{{ inv.dept }} · {{ inv.created_at | date: 'mediumDate' }} · {{ inv.payer }}</div>
+          </div>
+          <div class="text-right flex-none">
+            <div class="font-mono font-semibold text-[14px] text-[#12303f]">₹{{ total(inv) | number }}</div>
+            <div class="text-[10.5px] text-[#9aabbb]">Paid ₹{{ inv.paid | number }} · Due ₹{{ (total(inv) - inv.paid) | number }}</div>
+          </div>
+          <button *ngIf="inv.status !== 'Paid'" (click)="openPay(inv)"
+            class="bg-[#eaf5f3] text-[#0a6a60] border border-[#c9e7e2] hover:bg-[#dff0ed] rounded-[7px] px-3 py-[7px] text-[11.5px] font-semibold whitespace-nowrap">
+            Record Payment
+          </button>
+        </div>
+      </div>
+
+      <!-- Payments tab -->
+      <div *ngIf="activeTab === 'payments'" class="bg-white border border-[#e7ecf2] rounded-[14px] overflow-hidden">
+        <div class="grid gap-2 px-4 py-[11px] bg-[#f7f9fb] border-b border-[#eef2f6] text-[10.5px] font-semibold tracking-[.4px] text-[#7d92a4] uppercase"
+          style="grid-template-columns:96px 1.4fr 1.2fr 1fr 120px">
+          <span>Receipt</span><span>Patient</span><span>Invoice</span><span>Mode</span><span>Amount</span>
+        </div>
+        <div *ngIf="payments.data().length === 0" class="text-center text-body-2 text-sm py-8">No payments recorded yet.</div>
+        <div *ngFor="let p of payments.data()" class="grid gap-2 items-center px-4 py-[11px] border-b border-[#f1f4f8] text-[13px]"
+          style="grid-template-columns:96px 1.4fr 1.2fr 1fr 120px">
+          <span class="font-mono font-semibold text-[12px] text-brand">{{ shortId(p.id, 'RCP') }}</span>
+          <span class="text-[#22384a] font-medium">{{ p.patient }}</span>
+          <span class="text-[#5f7689] text-[12px]">{{ p.invoice_id ? shortId(p.invoice_id, 'INV') : '—' }}</span>
+          <span class="text-[#3f566a] text-[12px]">{{ p.mode }} · {{ p.created_at | date: 'shortTime' }}</span>
+          <span class="font-mono font-semibold text-[13px] text-[#12303f]">₹{{ p.amount | number }}</span>
+        </div>
+      </div>
+
+      <!-- Analytics tab -->
+      <div *ngIf="activeTab === 'analytics'" class="grid gap-[18px] items-start" style="grid-template-columns:1fr 1fr">
+        <div class="bg-white border border-[#e7ecf2] rounded-[14px] p-[16px_18px]">
+          <h3 class="m-0 mb-[10px] text-[14px] font-semibold text-[#1c3a4d]">Revenue by Department</h3>
+          <div *ngIf="revenueByDept().length === 0" class="text-body-2 text-sm py-2">No invoice data yet.</div>
+          <div *ngFor="let m of revenueByDept()" class="mb-[9px]">
+            <div class="flex justify-between text-[12px] text-[#3f566a] mb-[3px]">
+              <span>{{ m.dept }}</span>
+              <span class="font-mono text-[#6b8196]">₹{{ m.rev | number }}</span>
+            </div>
+            <div class="h-[6px] bg-[#eaf3f1] rounded-[5px] overflow-hidden">
+              <div class="h-full bg-brand" [style.width]="m.pct + '%'"></div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white border border-[#e7ecf2] rounded-[14px] p-[16px_18px]">
+          <h3 class="m-0 mb-2 text-[14px] font-semibold text-[#1c3a4d]">Collection Audit Trail</h3>
+          <div *ngIf="payments.data().length === 0" class="text-body-2 text-sm py-2">No payments recorded yet.</div>
+          <div *ngFor="let p of recentPayments()" class="py-2 border-b border-[#f0f3f7] text-[12px] text-[#3f566a] font-mono">
+            {{ p.created_at | date: 'short' }} · {{ shortId(p.id, 'RCP') }} · {{ p.patient }} · {{ p.mode }} · ₹{{ p.amount | number }}
+          </div>
+        </div>
+      </div>
+
+      <!-- New invoice modal -->
+      <div *ngIf="showNewInvoice" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" (click)="showNewInvoice = false">
+        <form (ngSubmit)="createInvoice()" (click)="$event.stopPropagation()" class="bg-white rounded-card p-5 w-full max-w-sm space-y-3">
+          <h3 class="font-semibold text-ink-2">New Invoice</h3>
           <div>
             <label class="block text-xs font-medium text-body-1 mb-1">Patient name</label>
             <input required [(ngModel)]="form.patient" name="patient"
@@ -62,56 +147,16 @@ function statusFor(total: number, paid: number): string {
               class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
           </div>
           <div *ngIf="errorMsg" class="text-xs text-danger-fg bg-danger-bg rounded-[9px] px-3 py-2">{{ errorMsg }}</div>
-          <button type="submit" [disabled]="busy"
-            class="w-full bg-brand hover:bg-brand-hover text-white rounded-[9px] py-2.5 text-sm font-semibold disabled:opacity-60">
-            {{ busy ? 'Creating…' : 'Create invoice' }}
-          </button>
-          <p class="text-[11.5px] text-muted-1">
-            Additional line items, GST, and multi-item invoices are a natural next step — add rows to the
-            <code class="font-mono bg-line-2 px-1 rounded mx-1">items</code> jsonb column per the schema.
-          </p>
+          <div class="flex gap-2 pt-1">
+            <button type="button" (click)="showNewInvoice = false" class="flex-1 border border-line-1 rounded-[9px] py-2 text-sm font-medium text-body-1">Cancel</button>
+            <button type="submit" [disabled]="busy" class="flex-1 bg-brand hover:bg-brand-hover text-white rounded-[9px] py-2 text-sm font-semibold disabled:opacity-60">
+              {{ busy ? 'Creating…' : 'Create' }}
+            </button>
+          </div>
         </form>
-
-        <div class="lg:col-span-2 bg-white border border-line-1 rounded-card overflow-hidden">
-          <div class="px-5 py-3 border-b border-line-1 font-semibold text-ink-2 text-sm">Invoices</div>
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="text-left text-[11.5px] text-muted-1 border-b border-line-1">
-                <th class="px-4 py-2 font-medium">Patient</th>
-                <th class="px-4 py-2 font-medium">Total</th>
-                <th class="px-4 py-2 font-medium">Paid</th>
-                <th class="px-4 py-2 font-medium">Status</th>
-                <th class="px-4 py-2 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngIf="invoices.loading()"><td colspan="5" class="px-4 py-6 text-center text-body-2">Loading…</td></tr>
-              <tr *ngIf="!invoices.loading() && invoices.data().length === 0">
-                <td colspan="5" class="px-4 py-6 text-center text-body-2">No invoices yet.</td>
-              </tr>
-              <tr *ngFor="let inv of invoices.data()" class="border-b border-line-2 last:border-0 align-top">
-                <td class="px-4 py-2">
-                  <div class="font-medium text-ink-2">{{ inv.patient }}</div>
-                  <div class="text-[11.5px] text-muted-1">{{ inv.dept }} · {{ inv.mrn || '—' }}</div>
-                </td>
-                <td class="px-4 py-2 font-mono">₹{{ total(inv) | number }}</td>
-                <td class="px-4 py-2 font-mono">₹{{ inv.paid | number }}</td>
-                <td class="px-4 py-2"><app-status-badge [status]="inv.status"></app-status-badge></td>
-                <td class="px-4 py-2 text-right">
-                  <button
-                    *ngIf="inv.status !== 'Paid'"
-                    (click)="openPay(inv)"
-                    class="text-[12px] font-semibold bg-brand hover:bg-brand-hover text-white rounded-[7px] px-3 py-1.5"
-                  >
-                    Record payment
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
       </div>
 
+      <!-- Record payment modal -->
       <div *ngIf="payingInvoice" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" (click)="payingInvoice = null">
         <form (ngSubmit)="recordPayment()" (click)="$event.stopPropagation()" class="bg-white rounded-card p-5 w-full max-w-sm space-y-3">
           <h3 class="font-semibold text-ink-2">Record payment — {{ payingInvoice.patient }}</h3>
@@ -142,20 +187,49 @@ function statusFor(total: number, paid: number): string {
 export class BillingComponent implements OnDestroy {
   paymentModes = PAYMENT_MODES;
   invoices: RealtimeTableHandle<any>;
+  payments: RealtimeTableHandle<any>;
   form: InvoiceForm = emptyInvoiceForm();
   busy = false;
   errorMsg = '';
+  shortId = shortId;
 
+  activeTab: BillTab = 'invoices';
+  tabs: { key: BillTab; label: string; icon: string }[] = [
+    { key: 'invoices', label: 'Invoices', icon: 'ph-receipt' },
+    { key: 'payments', label: 'Payments', icon: 'ph-currency-circle-dollar' },
+    { key: 'analytics', label: 'Analytics', icon: 'ph-chart-bar' },
+  ];
+
+  showNewInvoice = false;
   payingInvoice: any = null;
   payAmount = '';
   payMode = PAYMENT_MODES[0];
 
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.invoices = this.realtime.watch('invoices', (q) => q.order('created_at', { ascending: false }));
+    this.payments = this.realtime.watch('payments', (q) => q.order('created_at', { ascending: false }));
   }
 
   total(inv: any) {
     return invoiceTotal(inv.items);
+  }
+
+  recentPayments() {
+    return this.payments.data().slice(0, 10);
+  }
+
+  // Real revenue-by-department breakdown, replacing the reference's demo data.
+  revenueByDept() {
+    const all = this.invoices.data();
+    const byDept = new Map<string, number>();
+    for (const inv of all) {
+      const dept = inv.dept || 'Other';
+      byDept.set(dept, (byDept.get(dept) ?? 0) + this.total(inv));
+    }
+    const totalRev = all.reduce((sum: number, inv: any) => sum + this.total(inv), 0);
+    return Array.from(byDept.entries())
+      .map(([dept, rev]) => ({ dept, rev, pct: totalRev ? Math.round((rev / totalRev) * 100) : 0 }))
+      .sort((a, b) => b.rev - a.rev);
   }
 
   // Matches the reference's Billing KPI row exactly (Billed Today /
@@ -196,6 +270,7 @@ export class BillingComponent implements OnDestroy {
       });
       if (error) throw error;
       this.form = emptyInvoiceForm();
+      this.showNewInvoice = false;
       await this.invoices.refresh();
     } catch (err: any) {
       this.errorMsg = err.message;
@@ -235,5 +310,6 @@ export class BillingComponent implements OnDestroy {
 
   ngOnDestroy() {
     this.invoices.dispose();
+    this.payments.dispose();
   }
 }

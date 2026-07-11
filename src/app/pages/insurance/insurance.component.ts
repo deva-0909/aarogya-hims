@@ -5,21 +5,30 @@ import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
-const STAGES = ['Pre-Auth', 'Submitted', 'Query', 'Approved', 'Settled'];
 const NEXT_STAGE: Record<string, string> = {
   'Pre-Auth': 'Submitted',
   Submitted: 'Query',
   Query: 'Approved',
   Approved: 'Settled',
 };
-const STAGE_STYLE: Record<string, string> = {
-  'Pre-Auth': 'bg-line-2 text-body-1',
-  Submitted: 'bg-info-bg text-info-fg',
-  Query: 'bg-warning-bg text-warning-fg',
-  Approved: 'bg-success-bg text-success-fg',
-  Settled: 'bg-success-bg text-success-fg',
-  Rejected: 'bg-danger-bg text-danger-fg',
+
+// Exact stage colors from the reference's INSST map.
+const INSST: Record<string, { bg: string; fg: string }> = {
+  'Pre-Auth': { bg: '#e4edfb', fg: '#2257a3' },
+  Submitted: { bg: '#fdf0d8', fg: '#946200' },
+  Query: { bg: '#fbe3e3', fg: '#b42318' },
+  Approved: { bg: '#ece8fb', fg: '#5536c9' },
+  Settled: { bg: '#dff1ef', fg: '#0b7d72' },
+  Rejected: { bg: '#f1f4f8', fg: '#8093a6' },
 };
+const NEXT_LABEL: Record<string, string> = {
+  'Pre-Auth': 'Submit',
+  Submitted: 'Mark Approved',
+  Query: 'Resolve Query',
+  Approved: 'Settle',
+};
+
+type InsTab = 'claims' | 'analytics';
 
 interface ClaimForm {
   patient: string; mrn: string; insurer: string; policy_no: string; tpa: string;
@@ -29,6 +38,10 @@ const emptyForm = (): ClaimForm => ({
   patient: '', mrn: '', insurer: '', policy_no: '', tpa: '', sum_insured: '', claim_amount: '', procedure: '',
 });
 
+function shortId(id: string): string {
+  return 'CLM-' + id.slice(0, 4).toUpperCase();
+}
+
 @Component({
   selector: 'app-insurance',
   standalone: true,
@@ -37,10 +50,64 @@ const emptyForm = (): ClaimForm => ({
     <div>
       <app-kpi-row [items]="kpis()"></app-kpi-row>
 
-      <div class="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-6">
-        <form (ngSubmit)="createClaim()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 xl:col-span-1 h-fit">
-          <h2 class="font-semibold text-ink-2 text-sm mb-1">New Claim</h2>
+      <!-- Tab bar, matching the reference's 2-tab Insurance view -->
+      <div class="flex items-center gap-2 mb-[14px]">
+        <button *ngFor="let t of tabs" (click)="activeTab = t.key"
+          class="flex items-center gap-[7px] rounded-[9px] px-[15px] py-2 text-[12.5px] font-semibold"
+          [style.background]="activeTab === t.key ? '#0d8c80' : '#fff'"
+          [style.color]="activeTab === t.key ? '#fff' : '#52677b'"
+          [style.border]="'1px solid ' + (activeTab === t.key ? '#0d8c80' : '#dde5ee')">
+          <i class="ph {{ t.icon }} text-[15px]"></i>{{ t.label }}
+        </button>
+        <div class="flex-1"></div>
+        <button (click)="showNewClaim = true" class="bg-brand hover:bg-brand-hover text-white rounded-[9px] px-4 py-2 text-[12.5px] font-semibold">
+          + New Claim
+        </button>
+      </div>
 
+      <!-- Claims tab -->
+      <div *ngIf="activeTab === 'claims'" class="flex flex-col gap-3">
+        <div *ngIf="claims.data().length === 0" class="text-center text-body-2 text-sm py-8 bg-white border border-[#e7ecf2] rounded-[13px]">No claims yet.</div>
+        <div *ngFor="let c of claims.data()" (click)="openThread(c)" class="bg-white border border-[#e7ecf2] rounded-[13px] px-[17px] py-[15px] cursor-pointer hover:bg-[#f8fafc]">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div class="flex items-center gap-[9px]">
+              <span class="font-mono font-semibold text-[12.5px] text-brand">{{ shortId(c.id) }}</span>
+              <span class="font-semibold text-[#22384a]">{{ c.patient }}</span>
+            </div>
+            <span class="px-[10px] py-0.5 rounded-pill text-[11px] font-semibold" [style.background]="stageColor(c.stage).bg" [style.color]="stageColor(c.stage).fg">
+              {{ c.stage }}
+            </span>
+          </div>
+          <div class="text-[12px] text-[#5f7689] mt-[6px]">{{ c.procedure }} · {{ c.insurer }} ({{ c.policy_no || '—' }}) via {{ c.tpa || '—' }}</div>
+          <div *ngIf="c.stage === 'Query'" class="mt-2 bg-[#fef8ed] border border-[#f4dfae] rounded-[8px] px-[11px] py-2 text-[12px] text-[#946200]">
+            TPA query pending response
+          </div>
+          <div class="flex items-center justify-between mt-[11px]">
+            <span class="font-mono font-semibold text-[13px] text-[#12303f]">₹{{ c.claim_amount | number }}</span>
+            <button *ngIf="nextStage(c.stage)" (click)="advance(c); $event.stopPropagation()"
+              class="bg-[#eaf5f3] text-[#0a6a60] border border-[#c9e7e2] hover:bg-[#dff0ed] rounded-[7px] px-3 py-[6px] text-[11.5px] font-semibold">
+              {{ nextLabel(c.stage) }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Analytics tab -->
+      <div *ngIf="activeTab === 'analytics'" class="bg-white border border-[#e7ecf2] rounded-[14px] p-[16px_18px] max-w-[560px]">
+        <h3 class="m-0 mb-2 text-[14px] font-semibold text-[#1c3a4d]">Claims Analytics</h3>
+        <div *ngFor="let m of analytics()" class="flex items-center justify-between py-[10px] border-b border-[#f0f3f7]">
+          <div class="min-w-0">
+            <div class="text-[12.5px] text-[#3f566a]">{{ m.label }}</div>
+            <div class="text-[10.5px] text-[#9aabbb]">{{ m.note }}</div>
+          </div>
+          <span class="font-mono font-semibold text-[15px] text-[#12303f] flex-none">{{ m.value }}</span>
+        </div>
+      </div>
+
+      <!-- New claim modal -->
+      <div *ngIf="showNewClaim" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" (click)="showNewClaim = false">
+        <form (ngSubmit)="createClaim()" (click)="$event.stopPropagation()" class="bg-white rounded-card p-5 w-full max-w-sm space-y-3 max-h-[85vh] overflow-y-auto">
+          <h3 class="font-semibold text-ink-2">New Claim</h3>
           <div>
             <label class="block text-xs font-medium text-body-1 mb-1">Patient name</label>
             <input required [(ngModel)]="form.patient" name="patient"
@@ -87,53 +154,14 @@ const emptyForm = (): ClaimForm => ({
                 class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
             </div>
           </div>
-
           <div *ngIf="errorMsg" class="text-xs text-danger-fg bg-danger-bg rounded-[9px] px-3 py-2">{{ errorMsg }}</div>
-          <button type="submit" [disabled]="submitting"
-            class="w-full bg-brand hover:bg-brand-hover text-white rounded-[9px] py-2.5 text-sm font-semibold disabled:opacity-60">
-            {{ submitting ? 'Submitting…' : 'Raise claim' }}
-          </button>
+          <div class="flex gap-2 pt-1">
+            <button type="button" (click)="showNewClaim = false" class="flex-1 border border-line-1 rounded-[9px] py-2 text-sm font-medium text-body-1">Cancel</button>
+            <button type="submit" [disabled]="submitting" class="flex-1 bg-brand hover:bg-brand-hover text-white rounded-[9px] py-2 text-sm font-semibold disabled:opacity-60">
+              {{ submitting ? 'Submitting…' : 'Raise claim' }}
+            </button>
+          </div>
         </form>
-
-        <div class="xl:col-span-2 bg-white border border-line-1 rounded-card overflow-hidden">
-          <div class="px-5 py-3 border-b border-line-1 font-semibold text-ink-2 text-sm">Claims</div>
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="text-left text-[11.5px] text-muted-1 border-b border-line-1">
-                <th class="px-4 py-2 font-medium">Patient</th>
-                <th class="px-4 py-2 font-medium">Insurer / TPA</th>
-                <th class="px-4 py-2 font-medium">Claim ₹</th>
-                <th class="px-4 py-2 font-medium">Stage</th>
-                <th class="px-4 py-2 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngIf="!claims.loading() && claims.data().length === 0">
-                <td colspan="5" class="px-4 py-6 text-center text-body-2">No claims yet.</td>
-              </tr>
-              <tr *ngFor="let c of claims.data()" class="border-b border-line-2 last:border-0 align-top cursor-pointer hover:bg-line-2/40" (click)="openThread(c)">
-                <td class="px-4 py-2">
-                  <div class="font-medium text-ink-2">{{ c.patient }}</div>
-                  <div class="text-[11.5px] text-muted-1">{{ c.procedure }}</div>
-                </td>
-                <td class="px-4 py-2">
-                  <div class="text-body-1">{{ c.insurer }}</div>
-                  <div class="text-[11.5px] text-muted-1">{{ c.tpa || '—' }}</div>
-                </td>
-                <td class="px-4 py-2 font-mono">₹{{ c.claim_amount | number }}</td>
-                <td class="px-4 py-2">
-                  <span class="px-2 py-0.5 rounded-pill text-[11.5px] font-medium" [class]="stageStyle(c.stage)">{{ c.stage }}</span>
-                </td>
-                <td class="px-4 py-2 text-right" (click)="$event.stopPropagation()">
-                  <button *ngIf="nextStage(c.stage)" (click)="advance(c)"
-                    class="text-[12px] font-semibold bg-brand hover:bg-brand-hover text-white rounded-[7px] px-3 py-1.5">
-                    Move to {{ nextStage(c.stage) }}
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
       </div>
 
       <!-- TPA correspondence thread -->
@@ -161,10 +189,17 @@ const emptyForm = (): ClaimForm => ({
   `,
 })
 export class InsuranceComponent implements OnDestroy {
-  stages = STAGES;
   form: ClaimForm = emptyForm();
   submitting = false;
   errorMsg = '';
+  shortId = shortId;
+
+  activeTab: InsTab = 'claims';
+  tabs: { key: InsTab; label: string; icon: string }[] = [
+    { key: 'claims', label: 'Claims', icon: 'ph-clipboard-text' },
+    { key: 'analytics', label: 'Analytics', icon: 'ph-chart-bar' },
+  ];
+  showNewClaim = false;
 
   threadClaim: any = null;
   threadNote = '';
@@ -177,6 +212,14 @@ export class InsuranceComponent implements OnDestroy {
 
   nextStage(stage: string) {
     return NEXT_STAGE[stage ?? 'Pre-Auth'];
+  }
+
+  nextLabel(stage: string) {
+    return NEXT_LABEL[stage] ?? 'Advance';
+  }
+
+  stageColor(stage: string) {
+    return INSST[stage] ?? INSST['Pre-Auth'];
   }
 
   // Matches the reference's Insurance KPI row exactly (Active Claims /
@@ -197,8 +240,24 @@ export class InsuranceComponent implements OnDestroy {
     ];
   }
 
-  stageStyle(stage: string) {
-    return STAGE_STYLE[stage] ?? STAGE_STYLE['Pre-Auth'];
+  // Matches the reference's Claims Analytics panel structure; "Avg claim
+  // TAT" and "Rejection reasons" in the reference are static demo text (no
+  // real timestamps-per-stage or rejection-reason field to compute from) --
+  // replaced with real aggregates instead of copying fake text.
+  analytics(): { label: string; value: string; note: string }[] {
+    const all = this.claims.data();
+    const approvalRate = this.kpis()[1].value;
+    const totalClaimed = all.reduce((sum: number, c: any) => sum + Number(c.claim_amount || 0), 0);
+    const totalSanctioned = all.reduce((sum: number, c: any) => sum + Number(c.approved_amount || 0), 0);
+    const sanctionRatio = totalClaimed ? Math.round((totalSanctioned / totalClaimed) * 100) + '%' : '—';
+    const inQuery = all.filter((c: any) => c.stage === 'Query').length;
+
+    return [
+      { label: 'Total claims', value: String(all.length), note: 'All time' },
+      { label: 'Approval rate', value: approvalRate, note: 'Approved+Settled / total' },
+      { label: 'Claims with open query', value: String(inQuery), note: 'Awaiting your response to TPA' },
+      { label: 'Avg sanctioned vs claimed', value: sanctionRatio, note: 'Across all claims with a sanctioned amount' },
+    ];
   }
 
   async createClaim() {
@@ -219,6 +278,7 @@ export class InsuranceComponent implements OnDestroy {
       });
       if (error) throw error;
       this.form = emptyForm();
+      this.showNewClaim = false;
       await this.claims.refresh();
     } catch (err: any) {
       this.errorMsg = err.message;
