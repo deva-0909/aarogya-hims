@@ -16,6 +16,12 @@ interface RegForm {
   name: string; age: string; sex: string; phone: string; dept: string; doctor: string; type: string;
 }
 
+function fmtWait(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  return m + 'm';
+}
+
 @Component({
   selector: 'app-front-office',
   standalone: true,
@@ -99,38 +105,32 @@ interface RegForm {
         </form>
 
         <div class="lg:col-span-2 space-y-5">
-          <div class="bg-white border border-line-1 rounded-card overflow-hidden">
-            <div class="px-5 py-3 border-b border-line-1 font-semibold text-ink-2 text-sm">Today's Registrations</div>
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="text-left text-[11.5px] text-muted-1 border-b border-line-1">
-                  <th class="px-4 py-2 font-medium">Token</th>
-                  <th class="px-4 py-2 font-medium">Patient</th>
-                  <th class="px-4 py-2 font-medium">Dept / Doctor</th>
-                  <th class="px-4 py-2 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngIf="registrations.loading()">
-                  <td colspan="4" class="px-4 py-6 text-center text-body-2">Loading…</td>
-                </tr>
-                <tr *ngIf="!registrations.loading() && registrations.data().length === 0">
-                  <td colspan="4" class="px-4 py-6 text-center text-body-2">No registrations yet today.</td>
-                </tr>
-                <tr *ngFor="let r of registrations.data()" class="border-b border-line-2 last:border-0">
-                  <td class="px-4 py-2 font-mono font-semibold text-body-1">{{ r.token }}</td>
-                  <td class="px-4 py-2">
-                    <div class="font-medium text-ink-2">{{ r.name }}</div>
-                    <div class="text-[11.5px] text-muted-1">{{ r.age }} · {{ r.sex }} · {{ r.type }}</div>
-                  </td>
-                  <td class="px-4 py-2">
-                    <div class="text-body-1">{{ r.dept }}</div>
-                    <div class="text-[11.5px] text-muted-1">{{ r.doctor }}</div>
-                  </td>
-                  <td class="px-4 py-2"><app-status-badge [status]="r.status"></app-status-badge></td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="bg-white border border-[#e7ecf2] rounded-[14px] overflow-hidden">
+            <div class="px-[18px] py-[14px] border-b border-[#eef2f6] flex items-center justify-between">
+              <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Registration Queue</h3>
+              <span class="text-[12px] text-[#8094a6]">Live · updated just now</span>
+            </div>
+            <div class="grid px-[18px] py-[9px] bg-[#f7f9fb] border-b border-[#eef2f6] text-[10.5px] font-semibold tracking-[.4px] text-[#7d92a4] uppercase"
+              style="grid-template-columns:64px 1.5fr 86px 1.3fr 1fr 56px 122px">
+              <span>Token</span><span>Patient</span><span>Type</span><span>Department</span><span>Doctor</span><span>Wait</span><span>Status</span>
+            </div>
+            <div *ngIf="registrations.loading()" class="text-center text-body-2 py-6 text-sm">Loading…</div>
+            <div *ngIf="!registrations.loading() && registrations.data().length === 0" class="text-center text-body-2 py-6 text-sm">
+              No registrations yet today.
+            </div>
+            <div *ngFor="let r of registrations.data()" class="grid items-center px-[18px] py-[10px] border-b border-[#f1f4f8] text-[13px]"
+              style="grid-template-columns:64px 1.5fr 86px 1.3fr 1fr 56px 122px">
+              <span class="font-mono font-semibold text-[12px] text-brand">{{ r.token }}</span>
+              <div class="min-w-0">
+                <div class="font-medium text-[#22384a] truncate">{{ r.name }}</div>
+                <div class="text-[11.5px] text-[#8094a6]">{{ r.age }} · {{ r.sex }}</div>
+              </div>
+              <span class="text-[12px] text-[#5f7689]">{{ r.type }}</span>
+              <span class="text-[#3f566a] truncate">{{ r.dept }}</span>
+              <span class="text-[#5f7689] truncate">{{ r.doctor }}</span>
+              <span class="font-mono text-[12px] text-[#6b8196]">{{ fmtWait(r.created_at) }}</span>
+              <span><app-status-badge [status]="r.status"></app-status-badge></span>
+            </div>
           </div>
 
           <div class="bg-white border border-line-1 rounded-card overflow-hidden">
@@ -156,6 +156,7 @@ interface RegForm {
   `,
 })
 export class FrontOfficeComponent implements OnDestroy {
+  fmtWait = fmtWait;
   departments = DEPARTMENTS;
   form: RegForm = { name: '', age: '', sex: 'F', phone: '', dept: DEPARTMENTS[0], doctor: '', type: 'New' };
   submitting = false;

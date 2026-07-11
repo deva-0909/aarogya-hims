@@ -1,4 +1,4 @@
-import { Component, OnDestroy, computed } from '@angular/core';
+import { Component, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
@@ -11,11 +11,25 @@ const NEXT_STATUS: Record<string, string> = {
   'In Consultation': 'Completed',
 };
 
-const COLUMNS = ['Waiting', 'Called', 'In Consultation', 'Completed'];
+const OPD_SEQUENCE = ['Waiting', 'Called', 'In Consultation', 'Completed'];
+
+// Exact status dot colors from the reference prototype's PILL map
+// (opdCounts uses `pill(status).fg` for its dot color).
+const STATUS_DOT: Record<string, string> = {
+  Waiting: '#97600a',
+  Called: '#2257a3',
+  'In Consultation': '#0a6a60',
+  Completed: '#1d7a42',
+};
 
 function minutesSince(iso: string | null | undefined): number {
   if (!iso) return 0;
   return (Date.now() - new Date(iso).getTime()) / 60000;
+}
+
+function fmtWait(iso: string | null | undefined): string {
+  const m = Math.round(minutesSince(iso));
+  return m + 'm';
 }
 
 @Component({
@@ -28,32 +42,47 @@ function minutesSince(iso: string | null | undefined): number {
 
       <div *ngIf="visits.loading()" class="text-body-2">Loading…</div>
 
-      <div *ngIf="!visits.loading()" class="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div *ngFor="let col of columns" class="bg-white border border-line-1 rounded-card overflow-hidden">
-          <div class="px-4 py-3 border-b border-line-1 flex items-center justify-between">
-            <span class="font-semibold text-ink-2 text-sm">{{ col }}</span>
-            <span class="text-[11.5px] text-muted-1">{{ itemsFor(col).length }}</span>
+      <!-- Live consultation queue table + queue-by-status panel, matching the reference layout exactly -->
+      <div *ngIf="!visits.loading()" class="grid gap-[18px] items-start" style="grid-template-columns:1.8fr 1fr">
+        <div class="bg-white border border-[#e7ecf2] rounded-[14px] overflow-hidden">
+          <div class="px-[18px] py-[14px] border-b border-[#eef2f6] flex items-center justify-between">
+            <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Live Consultation Queue</h3>
+            <span class="text-[11.5px] text-[#9aabbb]">{{ activeVisits().length }} in queue</span>
           </div>
-          <div class="p-3 space-y-2 min-h-[120px]">
-            <div *ngIf="itemsFor(col).length === 0" class="text-[12.5px] text-muted-2 text-center py-6">
-              Nothing here
+          <div class="grid px-[18px] py-[9px] bg-[#f7f9fb] border-b border-[#eef2f6] text-[10.5px] font-semibold tracking-[.4px] text-[#7d92a4] uppercase"
+            style="grid-template-columns:74px 1.4fr 1.2fr 1fr 56px 56px 116px">
+            <span>Token</span><span>Patient</span><span>Department</span><span>Doctor</span><span>In</span><span>Wait</span><span>Action</span>
+          </div>
+          <div *ngIf="activeVisits().length === 0" class="text-center text-body-2 text-sm py-8">No patients currently in the OPD queue.</div>
+          <div *ngFor="let v of activeVisits()" class="grid items-center px-[18px] py-[10px] border-b border-[#f1f4f8] text-[13px]"
+            style="grid-template-columns:74px 1.4fr 1.2fr 1fr 56px 56px 116px">
+            <span class="font-mono font-semibold text-[12px] text-brand">{{ v.token }}</span>
+            <div class="min-w-0">
+              <div class="font-medium text-[#22384a] truncate">{{ v.name }}</div>
+              <app-status-badge [status]="v.status"></app-status-badge>
             </div>
-            <div *ngFor="let v of itemsFor(col)" class="border border-line-1 rounded-[10px] p-3">
-              <div class="flex items-center justify-between mb-1">
-                <span class="font-mono text-[12px] font-semibold text-body-1">{{ v.token }}</span>
-                <span class="text-[11px] text-muted-1">{{ v.in_time }}</span>
-              </div>
-              <div class="font-medium text-ink-2 text-sm">{{ v.name }}</div>
-              <div class="text-[11.5px] text-muted-1 mb-2">{{ v.dept }} · {{ v.doctor }}</div>
+            <span class="text-[#3f566a] truncate">{{ v.dept }}</span>
+            <span class="text-[#5f7689] truncate">{{ v.doctor }}</span>
+            <span class="font-mono text-[12px] text-[#6b8196]">{{ v.in_time }}</span>
+            <span class="font-mono text-[12px] text-[#6b8196]">{{ fmtWait(v.created_at) }}</span>
+            <span>
               <button
                 *ngIf="nextStatus(v.status)"
                 (click)="advance(v)"
-                class="w-full text-[12px] font-semibold bg-brand hover:bg-brand-hover text-white rounded-[7px] py-1.5"
+                class="bg-[#eaf5f3] text-[#0a6a60] border border-[#c9e7e2] rounded-[7px] px-[11px] py-[5px] text-[12px] font-semibold hover:bg-[#dff0ed]"
               >
-                Move to {{ nextStatus(v.status) }}
+                {{ nextStatus(v.status) }}
               </button>
-              <app-status-badge *ngIf="v.status === 'Completed'" status="Completed"></app-status-badge>
-            </div>
+            </span>
+          </div>
+        </div>
+
+        <div class="bg-white border border-[#e7ecf2] rounded-[14px] p-[16px_18px]">
+          <h3 class="m-0 mb-3 text-[14px] font-semibold text-[#1c3a4d]">Queue by Status</h3>
+          <div *ngFor="let s of statusCounts()" class="flex items-center gap-[11px] py-[10px] border-b border-[#f0f3f7] last:border-0">
+            <span class="w-[10px] h-[10px] rounded-full flex-none" [style.background]="s.dot"></span>
+            <span class="flex-1 text-[13px] text-[#3f566a]">{{ s.label }}</span>
+            <span class="font-mono font-semibold text-[16px] text-[#12303f]">{{ s.n }}</span>
           </div>
         </div>
       </div>
@@ -61,15 +90,24 @@ function minutesSince(iso: string | null | undefined): number {
   `,
 })
 export class OpdComponent implements OnDestroy {
-  columns = COLUMNS;
   visits: RealtimeTableHandle<any>;
+  fmtWait = fmtWait;
 
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.visits = this.realtime.watch('opd_visits', (q) => q.order('in_time', { ascending: true }));
   }
 
-  itemsFor(col: string) {
-    return this.visits.data().filter((v: any) => v.status === col);
+  activeVisits() {
+    return this.visits.data().filter((v: any) => v.status !== 'Completed');
+  }
+
+  statusCounts() {
+    const all = this.visits.data();
+    return OPD_SEQUENCE.map((label) => ({
+      label,
+      n: all.filter((v: any) => v.status === label).length,
+      dot: STATUS_DOT[label],
+    }));
   }
 
   nextStatus(status: string) {
