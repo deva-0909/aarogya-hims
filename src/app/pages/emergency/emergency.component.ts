@@ -12,11 +12,19 @@ const TRIAGE_LEVELS: { value: string; label: string }[] = [
   { value: 'green', label: 'Green — Non-urgent' },
 ];
 
-const TRIAGE_STYLE: Record<string, string> = {
-  red: 'bg-danger-bg text-danger-fg',
-  yellow: 'bg-warning-bg text-warning-fg',
-  green: 'bg-success-bg text-success-fg',
+// Exact TRI color/label map from the reference prototype (bg, fg, dot, pill label).
+const TRI: Record<string, { bg: string; fg: string; dot: string; label: string }> = {
+  red: { bg: '#fbe3e3', fg: '#b42318', dot: '#e5484d', label: 'Critical' },
+  yellow: { bg: '#fdf3d6', fg: '#95600a', dot: '#e3a008', label: 'Urgent' },
+  green: { bg: '#ddf1e3', fg: '#1d7a42', dot: '#2f9e60', label: 'Stable' },
 };
+const TRIAGE_ORDER: Record<string, number> = { red: 0, yellow: 1, green: 2 };
+
+function fmtWait(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  return m + 'm';
+}
 
 const STAGES = ['Triage', 'In Treatment', 'Disposition Pending', 'Closed'];
 const NEXT_STAGE: Record<string, string> = {
@@ -124,43 +132,57 @@ const emptyForm = (): VisitForm => ({
           </button>
         </form>
 
-        <!-- Kanban -->
-        <div class="xl:col-span-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <div *ngFor="let col of stages" class="bg-white border border-line-1 rounded-card overflow-hidden">
-            <div class="px-3 py-2.5 border-b border-line-1 flex items-center justify-between">
-              <span class="font-semibold text-ink-2 text-[12.5px]">{{ col }}</span>
-              <span class="text-[11px] text-muted-1">{{ itemsFor(col).length }}</span>
+        <!-- Triage Board, matching the reference's sorted-by-acuity list + summary panel -->
+        <div class="xl:col-span-3 grid gap-[18px] items-start" style="grid-template-columns:1.85fr 1fr">
+          <div class="bg-white border border-[#e7ecf2] rounded-[14px] p-[16px_18px]">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Triage Board</h3>
+              <span class="text-[12px] text-[#8094a6]">Sorted by acuity</span>
             </div>
-            <div class="p-2.5 space-y-2 min-h-[100px]">
-              <div *ngIf="itemsFor(col).length === 0" class="text-[11.5px] text-muted-2 text-center py-5">—</div>
-              <div *ngFor="let v of itemsFor(col)" class="border rounded-[9px] p-2.5"
-                [class]="v.triage === 'red' ? 'border-danger-fg' : 'border-line-1'">
-                <div class="flex items-center justify-between mb-0.5">
-                  <span class="font-medium text-ink-2 text-[12.5px] truncate">{{ v.patient }}</span>
-                  <span class="px-1.5 py-0.5 rounded-pill text-[10px] font-medium flex-none" [class]="triageStyle(v.triage)">
-                    {{ v.triage | uppercase }}
+            <div *ngIf="sortedVisits().length === 0" class="text-center text-body-2 text-sm py-8">No patients currently in the ED.</div>
+            <div *ngFor="let v of sortedVisits()" class="border rounded-[12px] p-[13px_15px] mb-[10px] flex gap-4 items-center"
+              [style.border-left]="'4px solid ' + triDot(v.triage)" style="border-top-color:#e7ecf2;border-right-color:#e7ecf2;border-bottom-color:#e7ecf2">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-[9px] flex-wrap">
+                  <span class="font-semibold text-[#22384a]">{{ v.patient }}</span>
+                  <span class="px-[9px] py-0.5 rounded-pill text-[10.5px] font-semibold" [style.background]="triStyle(v.triage).bg" [style.color]="triStyle(v.triage).fg">
+                    {{ triStyle(v.triage).label }}
                   </span>
+                  <span class="px-[9px] py-0.5 rounded-pill text-[10.5px] font-semibold bg-[#eaeef3] text-[#51687d]">{{ v.status }}</span>
+                  <span *ngIf="v.mlc" class="px-2 py-0.5 rounded-pill text-[10px] font-bold bg-[#fbe3e3] text-[#b42318]">MLC</span>
                 </div>
-                <div class="text-[11px] text-muted-1 mb-1">{{ v.age }}{{ v.age ? 'y' : '' }} {{ v.sex }} · {{ v.complaint }}</div>
-                <div class="text-[10.5px] text-muted-1 mb-1" *ngIf="v.hr || v.bp || v.spo2">
-                  {{ v.hr ? 'HR ' + v.hr : '' }}{{ v.bp ? ' · BP ' + v.bp : '' }}{{ v.spo2 ? ' · SpO2 ' + v.spo2 + '%' : '' }}
-                </div>
-                <div class="text-[10.5px] text-muted-1 mb-2">{{ v.doctor }}</div>
-                <div *ngIf="v.mlc" class="text-[10.5px] font-semibold text-warning-fg mb-1.5 flex items-center gap-1">
-                  <i class="ph ph-scales"></i> MLC
-                </div>
-                <div *ngIf="v.disposition" class="text-[10.5px] font-medium text-ink-2 mb-1.5">
-                  Disposition: {{ v.disposition }}
-                </div>
+                <div class="text-[12.5px] text-[#5f7689] mt-[3px]">{{ v.complaint }}</div>
+                <div class="text-[11.5px] text-[#8094a6] mt-[3px]">{{ v.age }}{{ v.age ? 'y' : '' }} {{ v.sex }} · {{ v.doctor }}</div>
+              </div>
+              <div class="flex gap-[15px] flex-none">
+                <div class="text-center"><div class="font-mono font-semibold text-[13px] text-[#26404f]">{{ v.hr || '—' }}</div><div class="text-[9.5px] text-[#9aabbb] tracking-[.3px]">HR</div></div>
+                <div class="text-center"><div class="font-mono font-semibold text-[13px] text-[#26404f]">{{ v.bp || '—' }}</div><div class="text-[9.5px] text-[#9aabbb]">BP</div></div>
+                <div class="text-center"><div class="font-mono font-semibold text-[13px]" [style.color]="spo2Color(v.spo2)">{{ v.spo2 || '—' }}%</div><div class="text-[9.5px] text-[#9aabbb]">SpO₂</div></div>
+                <div class="text-center"><div class="font-mono font-semibold text-[13px] text-[#26404f]">{{ v.temp || '—' }}°</div><div class="text-[9.5px] text-[#9aabbb]">Temp</div></div>
+              </div>
+              <div class="text-right flex-none w-[54px]">
+                <div class="font-mono font-semibold text-[14px] text-[#3f566a]">{{ fmtWait(v.created_at) }}</div>
+                <div class="text-[10px] text-[#9aabbb]">waiting</div>
+              </div>
+              <div class="flex-none">
                 <button *ngIf="nextStage(v.status) === 'Closed'" (click)="openDisposition(v)"
-                  class="w-full text-[11.5px] font-semibold bg-brand hover:bg-brand-hover text-white rounded-[7px] py-1.5">
-                  Set disposition
+                  class="text-[11.5px] font-semibold bg-brand hover:bg-brand-hover text-white rounded-[7px] px-3 py-[7px] whitespace-nowrap">
+                  Disposition
                 </button>
                 <button *ngIf="nextStage(v.status) && nextStage(v.status) !== 'Closed'" (click)="advance(v)"
-                  class="w-full text-[11.5px] font-semibold bg-brand hover:bg-brand-hover text-white rounded-[7px] py-1.5">
-                  Move to {{ nextStage(v.status) }}
+                  class="text-[11.5px] font-semibold bg-[#eaf5f3] text-[#0a6a60] border border-[#c9e7e2] hover:bg-[#dff0ed] rounded-[7px] px-3 py-[7px] whitespace-nowrap">
+                  {{ nextStage(v.status) }}
                 </button>
               </div>
+            </div>
+          </div>
+
+          <div class="bg-white border border-[#e7ecf2] rounded-[14px] p-[16px_18px]">
+            <h3 class="m-0 mb-3 text-[14px] font-semibold text-[#1c3a4d]">Triage Summary</h3>
+            <div *ngFor="let t of triageSummary()" class="flex items-center gap-[11px] py-[10px] border-b border-[#f0f3f7] last:border-0">
+              <span class="w-[10px] h-[10px] rounded-full flex-none" [style.background]="t.dot"></span>
+              <span class="flex-1 text-[13px] text-[#3f566a]">{{ t.label }}</span>
+              <span class="font-mono font-semibold text-[16px] text-[#12303f]">{{ t.n }}</span>
             </div>
           </div>
         </div>
@@ -191,7 +213,6 @@ const emptyForm = (): VisitForm => ({
   `,
 })
 export class EmergencyComponent implements OnDestroy {
-  stages = STAGES;
   triageLevels = TRIAGE_LEVELS;
   dispositions = DISPOSITIONS;
   form: VisitForm = emptyForm();
@@ -234,16 +255,41 @@ export class EmergencyComponent implements OnDestroy {
     ];
   }
 
-  itemsFor(stage: string) {
-    return this.visits.data().filter((v: any) => (v.status ?? 'Triage') === stage);
+  fmtWait = fmtWait;
+
+  // Sorted by acuity, matching the reference exactly -- critical first,
+  // then urgent, then stable; closed/discharged visits excluded from the board.
+  sortedVisits() {
+    return this.visits.data()
+      .filter((v: any) => v.status !== 'Closed')
+      .slice()
+      .sort((a: any, b: any) => (TRIAGE_ORDER[a.triage] ?? 3) - (TRIAGE_ORDER[b.triage] ?? 3));
+  }
+
+  triStyle(triage: string) {
+    return TRI[triage] ?? TRI['green'];
+  }
+
+  triDot(triage: string) {
+    return this.triStyle(triage).dot;
+  }
+
+  spo2Color(spo2: number | null) {
+    if (spo2 == null) return '#26404f';
+    return spo2 < 92 ? '#b42318' : '#26404f';
+  }
+
+  triageSummary() {
+    const active = this.visits.data().filter((v: any) => v.status !== 'Closed');
+    return [
+      { label: 'Critical', n: active.filter((v: any) => v.triage === 'red').length, dot: '#e5484d' },
+      { label: 'Urgent', n: active.filter((v: any) => v.triage === 'yellow').length, dot: '#e3a008' },
+      { label: 'Stable', n: active.filter((v: any) => v.triage === 'green').length, dot: '#2f9e60' },
+    ];
   }
 
   nextStage(status: string) {
     return NEXT_STAGE[status ?? 'Triage'];
-  }
-
-  triageStyle(triage: string) {
-    return TRIAGE_STYLE[triage] ?? TRIAGE_STYLE['green'];
   }
 
   async registerVisit() {
