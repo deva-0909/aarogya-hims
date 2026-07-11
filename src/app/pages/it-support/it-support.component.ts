@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const CATEGORIES = ['Hardware', 'Software', 'Network', 'Account', 'Other'];
 const STAGES = ['Open', 'In Progress', 'Resolved', 'Closed'];
@@ -21,9 +22,11 @@ const emptyForm = (): TicketForm => ({ title: '', description: '', category: CAT
 @Component({
   selector: 'app-it-support',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
+
 
       <div class="grid grid-cols-1 xl:grid-cols-4 gap-5">
         <form (ngSubmit)="createTicket()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 xl:col-span-1 h-fit">
@@ -108,6 +111,22 @@ export class ItSupportComponent implements OnDestroy {
 
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.tickets = this.realtime.watch('it_tickets', (q) => q.order('created_at', { ascending: false }));
+  }
+
+  // Matches the reference's IT Support KPI row for the first 3 cards
+  // exactly. "System Uptime" in the reference is a static fabricated
+  // number (99.9%) with no real monitoring behind it -- replaced with a
+  // real Closed-tickets count instead.
+  kpis(): KpiItem[] {
+    const all = this.tickets.data();
+    const monthStart = new Date().toISOString().slice(0, 7);
+    const resolvedToday = all.filter((t: any) => t.status === 'Resolved' && (t.created_at ?? '').slice(0, 10) === new Date().toISOString().slice(0, 10));
+    return [
+      { label: 'Open Tickets', value: String(all.filter((t: any) => t.status === 'Open').length), icon: 'ph-ticket', tintKey: 'blue' },
+      { label: 'Critical Priority', value: String(all.filter((t: any) => t.priority === 'Critical' && t.status !== 'Closed').length), icon: 'ph-warning', tintKey: 'red' },
+      { label: 'Resolved Today', value: String(resolvedToday.length), icon: 'ph-check-circle', tintKey: 'green' },
+      { label: 'Closed', value: String(all.filter((t: any) => t.status === 'Closed').length), icon: 'ph-pulse', tintKey: 'teal' },
+    ];
   }
 
   itemsFor(status: string) {

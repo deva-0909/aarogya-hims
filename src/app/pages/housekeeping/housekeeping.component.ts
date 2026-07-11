@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const TASK_TYPES = ['Cleaning', 'Sanitization', 'Maintenance', 'Linen Change'];
 const STAGES = ['Pending', 'In Progress', 'Completed'];
@@ -20,9 +21,11 @@ const emptyForm = (): TaskForm => ({ room: '', task_type: TASK_TYPES[0], priorit
 @Component({
   selector: 'app-housekeeping',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
+
 
       <div class="grid grid-cols-1 xl:grid-cols-4 gap-5">
         <form (ngSubmit)="createTask()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 xl:col-span-1 h-fit">
@@ -99,6 +102,21 @@ export class HousekeepingComponent implements OnDestroy {
 
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.tasks = this.realtime.watch('housekeeping_tasks', (q) => q.order('created_at', { ascending: false }));
+  }
+
+  // The reference splits Housekeeping into separate cleaning-task and
+  // maintenance-ticket systems -- this module tracks both as one task list
+  // (task_type distinguishes them), so KPIs are adapted to that scope.
+  kpis(): KpiItem[] {
+    const all = this.tasks.data();
+    const completed = all.filter((t: any) => t.status === 'Completed').length;
+    const completionRate = all.length ? Math.round((completed / all.length) * 100) : 0;
+    return [
+      { label: 'Open Tasks', value: String(all.filter((t: any) => t.status !== 'Completed').length), icon: 'ph-broom', tintKey: 'blue' },
+      { label: 'Completion Rate', value: completionRate + '%', icon: 'ph-check-circle', tintKey: 'green' },
+      { label: 'Urgent', value: String(all.filter((t: any) => t.priority === 'Urgent' && t.status !== 'Completed').length), icon: 'ph-warning', tintKey: 'red' },
+      { label: 'Total Tasks', value: String(all.length), icon: 'ph-clipboard-text', tintKey: 'teal' },
+    ];
   }
 
   itemsFor(status: string) {

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const STAGES = ['Reported', 'Under RCA', 'Action Plan', 'Closed'];
 const NEXT_STAGE: Record<string, string> = {
@@ -19,9 +20,11 @@ const emptyForm = (): IncidentForm => ({ description: '', reported_by_name: '' }
 @Component({
   selector: 'app-quality',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
+
       <p class="text-[12.5px] text-muted-1 mb-4 max-w-2xl">
         Patient safety incident reporting — visible only to Quality, HR, and Admin roles in a production
         deployment. Every deployment should keep this restricted; the demo-mode database policy applied
@@ -100,6 +103,21 @@ export class QualityComponent implements OnDestroy {
 
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.incidents = this.realtime.watch('patient_safety_incidents', (q) => q.order('created_at', { ascending: false }));
+  }
+
+  // The reference's Quality module tracks NABH accreditation chapters,
+  // scheduled audits, and non-conformances -- this module only tracks
+  // patient safety incident reports, so KPIs are adapted to that scope.
+  kpis(): KpiItem[] {
+    const all = this.incidents.data();
+    const monthStart = new Date().toISOString().slice(0, 7);
+    const closedThisMonth = all.filter((i: any) => i.stage === 'Closed' && (i.created_at ?? '').slice(0, 7) === monthStart);
+    return [
+      { label: 'Open Incidents', value: String(all.filter((i: any) => i.stage !== 'Closed').length), icon: 'ph-warning', tintKey: 'amber' },
+      { label: 'Under RCA', value: String(all.filter((i: any) => i.stage === 'Under RCA').length), icon: 'ph-magnifying-glass', tintKey: 'blue' },
+      { label: 'Closed (MTD)', value: String(closedThisMonth.length), icon: 'ph-seal-check', tintKey: 'green' },
+      { label: 'Total Reports', value: String(all.length), icon: 'ph-clipboard-text', tintKey: 'teal' },
+    ];
   }
 
   itemsFor(stage: string) {

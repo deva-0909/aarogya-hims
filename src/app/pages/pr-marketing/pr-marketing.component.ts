@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const TYPES = ['Health Camp', 'Press Release', 'Social Media', 'Community Event'];
 const STATUS_STYLE: Record<string, string> = {
@@ -19,9 +20,11 @@ const emptyForm = (): CampaignForm => ({ title: '', type: TYPES[0], start_date: 
 @Component({
   selector: 'app-pr-marketing',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
+
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
         <form (ngSubmit)="createCampaign()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 xl:col-span-1 h-fit">
@@ -110,6 +113,22 @@ export class PrMarketingComponent implements OnDestroy {
 
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.campaigns = this.realtime.watch('pr_campaigns', (q) => q.order('created_at', { ascending: false }));
+  }
+
+  // Matches the reference's "Active Campaigns" and "Events Upcoming"
+  // exactly. "Feedback NPS" and "Reach (30d)" in the reference need survey
+  // and analytics integrations we don't have -- replaced with real
+  // Planned/Completed counts instead of fabricating engagement numbers.
+  kpis(): KpiItem[] {
+    const all = this.campaigns.data();
+    const today = new Date().toISOString().slice(0, 10);
+    const upcoming = all.filter((c: any) => c.status === 'Planned' && c.start_date && c.start_date >= today);
+    return [
+      { label: 'Active Campaigns', value: String(all.filter((c: any) => c.status === 'Active').length), icon: 'ph-megaphone', tintKey: 'teal' },
+      { label: 'Planned', value: String(all.filter((c: any) => c.status === 'Planned').length), icon: 'ph-clipboard-text', tintKey: 'indigo' },
+      { label: 'Events Upcoming', value: String(upcoming.length), icon: 'ph-calendar-star', tintKey: 'blue' },
+      { label: 'Completed', value: String(all.filter((c: any) => c.status === 'Completed').length), icon: 'ph-check-circle', tintKey: 'green' },
+    ];
   }
 
   statusStyle(status: string) {

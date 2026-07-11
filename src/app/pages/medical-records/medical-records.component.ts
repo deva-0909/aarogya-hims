@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const PURPOSES = ['Patient Copy', 'Insurance', 'Legal', 'Referral', 'Other'];
 const STAGES = ['Requested', 'In Progress', 'Ready', 'Delivered'];
@@ -20,9 +21,11 @@ const emptyForm = (): RequestForm => ({ patient: '', mrn: '', purpose: PURPOSES[
 @Component({
   selector: 'app-medical-records',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
+
 
       <div class="grid grid-cols-1 xl:grid-cols-4 gap-5">
         <form (ngSubmit)="createRequest()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 xl:col-span-1 h-fit">
@@ -93,6 +96,23 @@ export class MedicalRecordsComponent implements OnDestroy {
 
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.requests = this.realtime.watch('medical_records_requests', (q) => q.order('created_at', { ascending: false }));
+  }
+
+  // The reference's Medical Records module is a full EHR/coding system
+  // (encounter coding, chart pulls) we don't model here -- this module only
+  // tracks document/copy requests, so these KPIs are adapted to that scope
+  // rather than replicating "EHR Records"/"Coding Complete %" we have no
+  // data behind.
+  kpis(): KpiItem[] {
+    const all = this.requests.data();
+    const monthStart = new Date().toISOString().slice(0, 7);
+    const deliveredThisMonth = all.filter((r: any) => r.status === 'Delivered' && (r.created_at ?? '').slice(0, 7) === monthStart);
+    return [
+      { label: 'Open Requests', value: String(all.filter((r: any) => r.status !== 'Delivered').length), icon: 'ph-folders', tintKey: 'blue' },
+      { label: 'Ready for Pickup', value: String(all.filter((r: any) => r.status === 'Ready').length), icon: 'ph-check-circle', tintKey: 'amber' },
+      { label: 'Delivered (MTD)', value: String(deliveredThisMonth.length), icon: 'ph-package', tintKey: 'green' },
+      { label: 'Total Requests', value: String(all.length), icon: 'ph-identification-card', tintKey: 'teal' },
+    ];
   }
 
   itemsFor(status: string) {
