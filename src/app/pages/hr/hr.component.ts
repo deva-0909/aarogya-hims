@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const LEAVE_TYPES = ['Casual', 'Sick', 'Earned', 'Maternity/Paternity', 'Unpaid'];
 const STATUS_STYLE: Record<string, string> = {
@@ -19,9 +20,11 @@ const emptyForm = (): LeaveForm => ({ staff_id: '', leave_type: LEAVE_TYPES[0], 
 @Component({
   selector: 'app-hr',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
+
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-6">
         <!-- Staff directory -->
@@ -141,6 +144,24 @@ export class HrComponent implements OnDestroy {
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.staff = this.realtime.watch('staff_directory', (q) => q.order('full_name'));
     this.leaves = this.realtime.watch('leave_requests', (q) => q.order('created_at', { ascending: false }));
+  }
+
+  // The reference's HR default view ("Staff Roster") tracks shift
+  // assignments and on-duty status we don't model here (staff_directory has
+  // no shift/duty field) -- adapted to real staff + leave data instead.
+  kpis(): KpiItem[] {
+    const staffAll = this.staff.data();
+    const leaveAll = this.leaves.data();
+    const today = new Date().toISOString().slice(0, 10);
+    const onLeaveToday = leaveAll.filter((l: any) => l.status === 'Approved' && l.start_date <= today && l.end_date >= today);
+    const pending = leaveAll.filter((l: any) => l.status === 'Pending');
+    const departments = new Set(staffAll.map((s: any) => s.department)).size;
+    return [
+      { label: 'Total Staff', value: String(staffAll.length), icon: 'ph-identification-badge', tintKey: 'blue' },
+      { label: 'On Leave Today', value: String(onLeaveToday.length), icon: 'ph-airplane-takeoff', tintKey: 'amber' },
+      { label: 'Pending Leave Requests', value: String(pending.length), icon: 'ph-clock-countdown', tintKey: 'red' },
+      { label: 'Departments', value: String(departments), icon: 'ph-users-three', tintKey: 'teal' },
+    ];
   }
 
   staffName(staffId: string) {
