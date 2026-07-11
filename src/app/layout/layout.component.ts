@@ -5,7 +5,15 @@ import { NavigationEnd, Router, RouterOutlet, RouterLink, RouterLinkActive } fro
 import { filter } from 'rxjs/operators';
 import { RoleService } from '../core/role.service';
 import { SupabaseService } from '../core/supabase.service';
+import { RealtimeTableService, RealtimeTableHandle } from '../core/realtime-table.service';
 import { groupedModulesForRole, roleLabel, roleTitle, routeFor, moduleByRoute, ROLES } from '../core/modules';
+
+interface NotificationItem {
+  severity: 'critical' | 'warning';
+  text: string;
+  route: string;
+  icon: string;
+}
 
 interface PatientResult {
   id: string;
@@ -116,16 +124,45 @@ interface PatientResult {
             </div>
           </div>
 
-          <!-- Notification bell -->
-          <button class="relative w-[38px] h-[38px] rounded-[9px] border border-[#e2e8ee] bg-white flex items-center justify-center flex-none hover:bg-[#f7f9fb]">
-            <i class="ph ph-bell text-[18px] text-[#52677b]"></i>
-            <span class="absolute top-[7px] right-2 w-[7px] h-[7px] rounded-full bg-[#d64545]"></span>
-          </button>
+          <!-- Notification bell -- live-computed, not stored. Only ever
+               shows what's true right now (critical lab/imaging results,
+               low blood stock, ED patients waiting too long, aging STAT
+               prescriptions), so it can never accumulate stale alerts the
+               way a stored notifications table would. -->
+          <div class="relative flex-none">
+            <button
+              (click)="notifMenuOpen = !notifMenuOpen; roleMenuOpen = false"
+              class="relative w-[38px] h-[38px] rounded-[9px] border border-[#e2e8ee] bg-white flex items-center justify-center hover:bg-[#f7f9fb]"
+            >
+              <i class="ph ph-bell text-[18px] text-[#52677b]"></i>
+              <span *ngIf="notifications().length > 0" class="absolute top-[7px] right-2 w-[7px] h-[7px] rounded-full bg-[#d64545]"></span>
+            </button>
+            <div
+              *ngIf="notifMenuOpen"
+              class="absolute top-[48px] right-0 w-[320px] bg-white border border-[#e2e8ee] rounded-xl shadow-[0_12px_30px_rgba(18,40,55,.16)] p-1.5 z-40 max-h-[420px] overflow-y-auto"
+            >
+              <div class="text-[10px] font-bold tracking-[.6px] text-[#8aa0b4] uppercase px-2.5 pt-2 pb-1">
+                {{ notifications().length }} active
+              </div>
+              <div *ngIf="notifications().length === 0" class="text-center text-[12.5px] text-[#9aabbb] py-6">
+                Nothing needs attention right now.
+              </div>
+              <a
+                *ngFor="let n of notifications()"
+                [routerLink]="['/', n.route]"
+                (click)="notifMenuOpen = false"
+                class="flex items-start gap-[10px] px-2.5 py-2.5 rounded-lg cursor-pointer hover:bg-[#f1f4f8]"
+              >
+                <i class="ph {{ n.icon }} text-[15px] mt-0.5 flex-none" [style.color]="n.severity === 'critical' ? '#b42318' : '#97600a'"></i>
+                <span class="text-[12.5px] leading-snug" [style.color]="n.severity === 'critical' ? '#b42318' : '#5f7689'">{{ n.text }}</span>
+              </a>
+            </div>
+          </div>
 
           <!-- Role switcher -->
           <div class="relative flex-none">
             <button
-              (click)="roleMenuOpen = !roleMenuOpen"
+              (click)="roleMenuOpen = !roleMenuOpen; notifMenuOpen = false"
               class="flex items-center gap-[9px] border border-[#e2e8ee] bg-white rounded-[9px] pl-[6px] pr-[9px] py-[5px] hover:bg-[#f7f9fb]"
             >
               <span class="w-[30px] h-[30px] rounded-[7px] bg-brand-dark flex items-center justify-center text-[11px] font-semibold text-[#7fd9cd] flex-none">
@@ -206,17 +243,71 @@ export class LayoutComponent implements OnInit, OnDestroy {
   roleTitle = roleTitle;
   routeFor = routeFor;
   roleMenuOpen = false;
+  notifMenuOpen = false;
 
   searchQuery = '';
   searchOpen = false;
   searchLoading = false;
   searchResults: PatientResult[] = [];
 
+  private labOrders: RealtimeTableHandle<any>;
+  private radiologyOrders: RealtimeTableHandle<any>;
+  private bloodInventory: RealtimeTableHandle<any>;
+  private edVisits: RealtimeTableHandle<any>;
+  private prescriptions: RealtimeTableHandle<any>;
+
   constructor(
     public roleService: RoleService,
     private router: Router,
-    private supabaseService: SupabaseService
-  ) {}
+    private supabaseService: SupabaseService,
+    private realtime: RealtimeTableService
+  ) {
+    this.labOrders = this.realtime.watch('lab_orders');
+    this.radiologyOrders = this.realtime.watch('radiology_orders');
+    this.bloodInventory = this.realtime.watch('blood_inventory');
+    this.edVisits = this.realtime.watch('ed_visits');
+    this.prescriptions = this.realtime.watch('prescriptions');
+  }
+
+  // Live-computed, not stored -- recalculated from current data every time
+  // the panel opens, so it can never show a stale alert for something
+  // that's since been resolved. This is the structural fix the alert-
+  // fatigue research points to: surface only what's actually still true,
+  // not an accumulating log of everything that ever happened.
+  notifications(): NotificationItem[] {
+    const items: NotificationItem[] = [];
+    const now = Date.now();
+
+    for (const o of this.labOrders.data()) {
+      if (o.critical && o.stage !== 'Validated') {
+        items.push({ severity: 'critical', icon: 'ph-flask', route: 'laboratory', text: `Critical lab result -- ${o.patient} (${o.test})` });
+      }
+    }
+    for (const o of this.radiologyOrders.data()) {
+      if (o.critical && o.stage !== 'Verified') {
+        items.push({ severity: 'critical', icon: 'ph-scan', route: 'radiology', text: `Critical imaging finding -- ${o.patient} (${o.scan})` });
+      }
+    }
+    for (const v of this.edVisits.data()) {
+      if (v.status === 'Triage' && v.created_at && now - new Date(v.created_at).getTime() > 30 * 60000) {
+        items.push({ severity: 'critical', icon: 'ph-first-aid-kit', route: 'emergency', text: `${v.patient} has been waiting in ED triage over 30 minutes` });
+      }
+    }
+    for (const b of this.bloodInventory.data()) {
+      if (b.min_threshold != null && b.units <= b.min_threshold) {
+        items.push({ severity: 'warning', icon: 'ph-drop', route: 'blood-bank', text: `${b.blood_group} blood stock at ${b.units} units (min ${b.min_threshold})` });
+      }
+    }
+    for (const rx of this.prescriptions.data()) {
+      if (rx.priority === 'STAT' && rx.status !== 'Dispensed' && rx.created_at && now - new Date(rx.created_at).getTime() > 15 * 60000) {
+        items.push({ severity: 'warning', icon: 'ph-pill', route: 'pharmacy', text: `STAT prescription for ${rx.patient} still not dispensed after 15+ min` });
+      }
+    }
+
+    // Critical items first, matching the priority-sort principle used
+    // throughout the app rather than showing them in arrival order.
+    return items.sort((a, b) => (a.severity === 'critical' ? 0 : 1) - (b.severity === 'critical' ? 0 : 1));
+  }
 
   ngOnInit() {
     this.clockTimer = setInterval(() => this.now.set(new Date()), 30_000);
@@ -224,6 +315,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
     this.routerSub = this.router.events.pipe(filter((e) => e instanceof NavigationEnd)).subscribe((e: any) => {
       this.updateActiveModule(e.urlAfterRedirects ?? e.url);
       this.roleMenuOpen = false;
+      this.notifMenuOpen = false;
       this.searchOpen = false;
     });
   }
@@ -236,6 +328,11 @@ export class LayoutComponent implements OnInit, OnDestroy {
   ngOnDestroy() {
     clearInterval(this.clockTimer);
     this.routerSub?.unsubscribe();
+    this.labOrders.dispose();
+    this.radiologyOrders.dispose();
+    this.bloodInventory.dispose();
+    this.edVisits.dispose();
+    this.prescriptions.dispose();
     clearTimeout(this.searchTimer);
   }
 

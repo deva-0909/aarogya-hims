@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { Doctor, rosterFor } from '../../core/doctors';
+import { sortByPriorityThenTime } from '../../core/priority';
 import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const SAMPLE_TYPES = ['Blood', 'Urine', 'Stool', 'Sputum', 'Swab', 'CSF', 'Other'];
@@ -197,8 +198,10 @@ export class LaboratoryComponent implements OnDestroy {
     ];
   }
 
+  // Priority-sorted within each stage -- STAT rises to the top, same
+  // principle as the ED Triage Board.
   itemsFor(stage: string) {
-    return this.orders.data().filter((o: any) => (o.stage ?? 'Registered') === stage);
+    return sortByPriorityThenTime(this.orders.data().filter((o: any) => (o.stage ?? 'Registered') === stage));
   }
 
   nextStage(stage: string) {

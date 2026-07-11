@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { Doctor, rosterFor } from '../../core/doctors';
+import { sortByPriorityThenTime } from '../../core/priority';
 import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -189,8 +190,9 @@ export class BloodBankComponent implements OnDestroy {
     ];
   }
 
+  // Priority-sorted within each stage -- STAT rises to the top.
   itemsFor(stage: string) {
-    return this.requests.data().filter((r: any) => (r.stage ?? 'Requested') === stage);
+    return sortByPriorityThenTime(this.requests.data().filter((r: any) => (r.stage ?? 'Requested') === stage));
   }
 
   nextStage(stage: string) {

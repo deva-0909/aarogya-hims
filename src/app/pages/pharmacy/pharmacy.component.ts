@@ -6,6 +6,7 @@ import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-t
 import { Doctor, rosterFor } from '../../core/doctors';
 import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 import { StatusBadgeComponent } from '../../shared/status-badge.component';
+import { sortByPriorityThenTime } from '../../core/priority';
 
 interface RxItem {
   drug: string;
@@ -179,7 +180,7 @@ function emptyForm(): RxForm {
           <span>Rx #</span><span>Patient</span><span>Items</span><span>Priority</span><span>Status</span><span>Action</span>
         </div>
         <div *ngIf="prescriptions.data().length === 0" class="text-center text-body-2 text-sm py-8">No prescriptions in the queue.</div>
-        <div *ngFor="let rx of prescriptions.data()" class="grid items-center px-[18px] py-[11px] border-b border-[#f1f4f8] text-[13px]"
+        <div *ngFor="let rx of sortedPrescriptions()" class="grid items-center px-[18px] py-[11px] border-b border-[#f1f4f8] text-[13px]"
           style="grid-template-columns:88px 1.5fr 50px 84px 104px 100px">
           <span class="font-mono font-semibold text-[12px] text-[#6b4bd6]">{{ rxNumber(rx.id) }}</span>
           <div class="min-w-0">
@@ -230,6 +231,12 @@ export class PharmacyComponent implements OnDestroy {
   // Short, stable "Rx #" derived from the row's uuid -- the reference has a
   // real sequential prescription number, which we don't generate; this is
   // the closest honest equivalent using data that actually exists.
+  // Priority-sorted queue: STAT always rises to the top regardless of when
+  // it was submitted, same principle as the ED Triage Board.
+  sortedPrescriptions() {
+    return sortByPriorityThenTime(this.prescriptions.data());
+  }
+
   rxNumber(id: string) {
     return 'RX-' + id.slice(0, 4).toUpperCase();
   }

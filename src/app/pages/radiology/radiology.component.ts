@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { Doctor, rosterFor } from '../../core/doctors';
+import { sortByPriorityThenTime } from '../../core/priority';
 import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const MODALITIES = ['X-Ray', 'CT', 'MRI', 'Ultrasound', 'Mammography', 'Fluoroscopy'];
@@ -225,8 +226,9 @@ export class RadiologyComponent implements OnDestroy {
     ];
   }
 
+  // Priority-sorted within each stage -- STAT rises to the top.
   itemsFor(stage: string) {
-    return this.orders.data().filter((o: any) => (o.stage ?? 'Registered') === stage);
+    return sortByPriorityThenTime(this.orders.data().filter((o: any) => (o.stage ?? 'Registered') === stage));
   }
 
   nextStage(stage: string) {

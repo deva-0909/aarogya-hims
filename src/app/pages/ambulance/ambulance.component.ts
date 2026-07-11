@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
+import { sortByPriorityThenTime } from '../../core/priority';
 
 const STAGES = ['Assigned', 'En Route', 'On Scene', 'Transporting', 'At Hospital', 'Completed'];
 const NEXT_STAGE: Record<string, string> = {
@@ -141,8 +142,9 @@ export class AmbulanceComponent implements OnDestroy {
     ];
   }
 
+  // Priority-sorted within each stage -- Emergency rises to the top.
   itemsFor(stage: string) {
-    return this.trips.data().filter((t: any) => (t.stage ?? 'Assigned') === stage);
+    return sortByPriorityThenTime(this.trips.data().filter((t: any) => (t.stage ?? 'Assigned') === stage));
   }
 
   nextStage(stage: string) {
