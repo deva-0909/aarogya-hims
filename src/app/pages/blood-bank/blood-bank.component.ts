@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { Doctor, rosterFor } from '../../core/doctors';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const COMPONENTS = ['Whole Blood', 'Packed RBC', 'Platelets', 'Fresh Frozen Plasma', 'Cryoprecipitate'];
@@ -31,9 +32,10 @@ const emptyForm = (): RequestForm => ({
 @Component({
   selector: 'app-blood-bank',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
 
       <!-- Inventory -->
       <div class="bg-white border border-line-1 rounded-card overflow-hidden mb-6">
@@ -170,6 +172,21 @@ export class BloodBankComponent implements OnDestroy {
 
   doctorOptions(): Doctor[] {
     return rosterFor(this.doctors.data());
+  }
+
+  // Matches the reference's Blood Bank KPI row and formulas for the first
+  // 3 cards exactly. The reference's 4th card ("Donors (MTD)") is a static
+  // fabricated number -- we don't track donor registrations in this schema
+  // -- replaced with a real "Transfused" count instead of copying fake data.
+  kpis(): KpiItem[] {
+    const inv = this.inventory.data();
+    const req = this.requests.data();
+    return [
+      { label: 'Total Units', value: String(inv.reduce((sum: number, g: any) => sum + Number(g.units || 0), 0)), icon: 'ph-drop', tintKey: 'magenta' },
+      { label: 'Groups Below Min', value: String(inv.filter((g: any) => this.isLowStock(g)).length), icon: 'ph-warning', tintKey: 'red' },
+      { label: 'Open Requests', value: String(req.filter((r: any) => r.stage !== 'Transfused').length), icon: 'ph-clipboard-text', tintKey: 'blue' },
+      { label: 'Transfused', value: String(req.filter((r: any) => r.stage === 'Transfused').length), icon: 'ph-check-circle', tintKey: 'green' },
+    ];
   }
 
   itemsFor(stage: string) {

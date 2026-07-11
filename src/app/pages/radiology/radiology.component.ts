@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { Doctor, rosterFor } from '../../core/doctors';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const MODALITIES = ['X-Ray', 'CT', 'MRI', 'Ultrasound', 'Mammography', 'Fluoroscopy'];
 const STAGES = ['Registered', 'Scheduled', 'Acquired', 'Reported', 'Verified'];
@@ -36,9 +37,10 @@ const emptyForm = (): OrderForm => ({
 @Component({
   selector: 'app-radiology',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
 
       <div class="grid grid-cols-1 xl:grid-cols-4 gap-5 mb-6">
         <form (ngSubmit)="createOrder()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 xl:col-span-1 h-fit">
@@ -210,6 +212,17 @@ export class RadiologyComponent implements OnDestroy {
 
   doctorOptions(): Doctor[] {
     return rosterFor(this.doctors.data());
+  }
+
+  // Matches the reference's exact Radiology KPI row and formulas.
+  kpis(): KpiItem[] {
+    const all = this.orders.data();
+    return [
+      { label: 'Pending Studies', value: String(all.filter((o: any) => o.stage !== 'Verified').length), icon: 'ph-scan', tintKey: 'blue' },
+      { label: 'Awaiting Sign-off', value: String(all.filter((o: any) => o.stage === 'Reported').length), icon: 'ph-eye', tintKey: 'amber' },
+      { label: 'STAT Pending', value: String(all.filter((o: any) => o.priority === 'STAT' && o.stage !== 'Verified').length), icon: 'ph-warning', tintKey: 'teal' },
+      { label: 'Critical Findings', value: String(all.filter((o: any) => o.critical).length), icon: 'ph-warning-circle', tintKey: 'red' },
+    ];
   }
 
   itemsFor(stage: string) {

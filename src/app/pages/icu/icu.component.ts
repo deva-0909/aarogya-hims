@@ -177,17 +177,24 @@ export class IcuComponent implements OnDestroy {
   // The reference has no custom ICU KPIs either (same generic-placeholder
   // fallback as Laboratory) -- real metrics in the same visual style,
   // using data we already track (acuity, ventilator status).
+  // Matches the reference's exact ICU KPI row and order (Occupancy /
+  // Ventilated / Critical / Avg LOS). Avg LOS is now genuinely computed
+  // from admitted_at (added specifically for this) rather than a fabricated
+  // day-counter -- days-in-ICU averaged across currently occupied beds.
   kpis(): KpiItem[] {
     const all = this.beds.data();
     const occupied = all.filter((b: any) => b.status === 'occupied');
     const critical = occupied.filter((b: any) => b.acuity === 'Critical');
     const ventilated = occupied.filter((b: any) => b.ventilated);
-    const available = all.filter((b: any) => b.status === 'available');
+    const withStay = occupied.filter((b: any) => b.admitted_at);
+    const avgLos = withStay.length
+      ? (withStay.reduce((sum: number, b: any) => sum + (Date.now() - new Date(b.admitted_at).getTime()) / 86400000, 0) / withStay.length).toFixed(1)
+      : '0.0';
     return [
-      { label: 'Occupied Beds', value: `${occupied.length}/${all.length}`, icon: 'ph-bed', tintKey: 'blue' },
-      { label: 'Critical Acuity', value: String(critical.length), icon: 'ph-warning-octagon', tintKey: 'red' },
-      { label: 'Ventilated', value: String(ventilated.length), icon: 'ph-wind', tintKey: 'indigo' },
-      { label: 'Available', value: String(available.length), icon: 'ph-check-circle', tintKey: 'green' },
+      { label: 'Occupancy', value: `${occupied.length}/${all.length}`, icon: 'ph-bed', tintKey: 'teal' },
+      { label: 'Ventilated', value: String(ventilated.length), icon: 'ph-wind', tintKey: 'blue' },
+      { label: 'Critical', value: String(critical.length), icon: 'ph-warning-octagon', tintKey: 'red' },
+      { label: 'Avg LOS', value: avgLos + 'd', icon: 'ph-clock', tintKey: 'indigo' },
     ];
   }
 
@@ -232,6 +239,7 @@ export class IcuComponent implements OnDestroy {
           consultant: this.admitForm.consultant,
           nurse: this.admitForm.nurse,
           acuity: this.admitForm.acuity,
+          admitted_at: new Date().toISOString(),
         })
         .eq('id', this.admittingBed.id);
       if (error) throw error;
@@ -272,6 +280,7 @@ export class IcuComponent implements OnDestroy {
       .update({
         status: 'available', patient: null, mrn: null, dx: null, consultant: null, nurse: null,
         acuity: null, hr: null, bp: null, spo2: null, rr: null, temp: null, ventilated: false, vent_settings: null,
+        admitted_at: null,
       })
       .eq('id', this.vitalsBed.id);
     if (error) {

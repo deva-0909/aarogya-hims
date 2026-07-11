@@ -185,15 +185,15 @@ export class LaboratoryComponent implements OnDestroy {
   // falls back to a generic placeholder row) -- these are real, useful
   // metrics in the same visual style rather than replicating a meaningless
   // placeholder.
+  // Matches the reference's exact Lab KPI row and formulas (labPending /
+  // labReported / labCritCount / labStat).
   kpis(): KpiItem[] {
     const all = this.orders.data();
-    const todayStart = new Date().toISOString().slice(0, 10);
-    const reportedToday = all.filter((o: any) => o.stage === 'Reported' && (o.created_at ?? '').slice(0, 10) === todayStart);
     return [
-      { label: 'Pending Orders', value: String(all.filter((o: any) => o.stage !== 'Validated').length), icon: 'ph-flask', tintKey: 'blue' },
-      { label: 'In Process', value: String(all.filter((o: any) => o.stage === 'In Process').length), icon: 'ph-hourglass-medium', tintKey: 'amber' },
-      { label: 'Reported Today', value: String(reportedToday.length), icon: 'ph-check-circle', tintKey: 'green' },
-      { label: 'Critical Flagged', value: String(all.filter((o: any) => o.critical).length), icon: 'ph-warning-circle', tintKey: 'red' },
+      { label: 'Pending', value: String(all.filter((o: any) => o.stage !== 'Validated').length), icon: 'ph-flask', tintKey: 'blue' },
+      { label: 'Awaiting Validation', value: String(all.filter((o: any) => o.stage === 'Reported').length), icon: 'ph-eye', tintKey: 'amber' },
+      { label: 'Critical Values', value: String(all.filter((o: any) => o.critical).length), icon: 'ph-warning-circle', tintKey: 'red' },
+      { label: 'STAT Pending', value: String(all.filter((o: any) => o.priority === 'STAT' && o.stage !== 'Validated').length), icon: 'ph-warning', tintKey: 'teal' },
     ];
   }
 
