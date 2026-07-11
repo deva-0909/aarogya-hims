@@ -5,6 +5,7 @@ import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { Doctor, rosterFor } from '../../core/doctors';
 import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
+import { StatusBadgeComponent } from '../../shared/status-badge.component';
 
 interface RxItem {
   drug: string;
@@ -31,11 +32,12 @@ const NEXT_STATUS: Record<string, string> = {
   Ready: 'Dispensed',
 };
 
-const PRIORITY_STYLE: Record<string, string> = {
-  Routine: 'bg-line-2 text-body-1',
-  Urgent: 'bg-warning-bg text-warning-fg',
-  STAT: 'bg-danger-bg text-danger-fg',
-};
+// Exact priority pill colors from the reference's Pharmacy queue (2-tier:
+// STAT is red, everything else is neutral grey -- unlike the 3-tier
+// STAT/Urgent/Routine used elsewhere in the app).
+function priorityColor(priority: string) {
+  return priority === 'STAT' ? { bg: '#fbe3e3', fg: '#b42318' } : { bg: '#eaeef3', fg: '#51687d' };
+}
 
 function emptyItem(): RxItem {
   return { drug: '', dose: '', freq: '', dur: '', qty: 1 };
@@ -47,7 +49,7 @@ function emptyForm(): RxForm {
 @Component({
   selector: 'app-pharmacy',
   standalone: true,
-  imports: [CommonModule, FormsModule, KpiRowComponent],
+  imports: [CommonModule, FormsModule, KpiRowComponent, StatusBadgeComponent],
   template: `
     <div>
       <app-kpi-row [items]="kpis()"></app-kpi-row>
@@ -167,35 +169,44 @@ function emptyForm(): RxForm {
         </div>
       </div>
 
-      <!-- Queue board -->
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div *ngFor="let col of columns" class="bg-white border border-line-1 rounded-card overflow-hidden">
-          <div class="px-4 py-3 border-b border-line-1 flex items-center justify-between">
-            <span class="font-semibold text-ink-2 text-sm">{{ col }}</span>
-            <span class="text-[11.5px] text-muted-1">{{ itemsFor(col).length }}</span>
+      <!-- Dispensing Queue, matching the reference's exact table layout -->
+      <div class="bg-white border border-[#e7ecf2] rounded-[14px] overflow-hidden">
+        <div class="px-[18px] py-[14px] border-b border-[#eef2f6]">
+          <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Dispensing Queue</h3>
+        </div>
+        <div class="grid px-[18px] py-[9px] bg-[#f7f9fb] border-b border-[#eef2f6] text-[10.5px] font-semibold tracking-[.4px] text-[#7d92a4] uppercase"
+          style="grid-template-columns:88px 1.5fr 50px 84px 104px 100px">
+          <span>Rx #</span><span>Patient</span><span>Items</span><span>Priority</span><span>Status</span><span>Action</span>
+        </div>
+        <div *ngIf="prescriptions.data().length === 0" class="text-center text-body-2 text-sm py-8">No prescriptions in the queue.</div>
+        <div *ngFor="let rx of prescriptions.data()" class="grid items-center px-[18px] py-[11px] border-b border-[#f1f4f8] text-[13px]"
+          style="grid-template-columns:88px 1.5fr 50px 84px 104px 100px">
+          <span class="font-mono font-semibold text-[12px] text-[#6b4bd6]">{{ rxNumber(rx.id) }}</span>
+          <div class="min-w-0">
+            <div class="font-medium text-[#22384a] truncate">{{ rx.patient }}</div>
+            <div class="text-[11px] text-[#8094a6] truncate">{{ rx.prescriber }}</div>
           </div>
-          <div class="p-3 space-y-2 min-h-[120px]">
-            <div *ngIf="itemsFor(col).length === 0" class="text-[12.5px] text-muted-2 text-center py-6">Nothing here</div>
-            <div *ngFor="let rx of itemsFor(col)" class="border border-line-1 rounded-[10px] p-3">
-              <div class="flex items-center justify-between mb-1">
-                <span class="font-medium text-ink-2 text-sm">{{ rx.patient }}</span>
-                <span class="px-2 py-0.5 rounded-pill text-[10.5px] font-medium" [class]="priorityStyle(rx.priority)">{{ rx.priority }}</span>
-              </div>
-              <div class="text-[11.5px] text-muted-1 mb-1">{{ rx.mrn || '—' }} · {{ rx.ward || '—' }} · {{ rx.prescriber }}</div>
-              <div class="text-[11.5px] text-body-1 mb-2">{{ rx.items?.length ?? 0 }} item(s){{ rx.allergy ? ' · Allergy: ' + rx.allergy : '' }}</div>
-              <button *ngIf="nextStatus(rx.status)" (click)="advance(rx)"
-                class="w-full text-[12px] font-semibold bg-brand hover:bg-brand-hover text-white rounded-[7px] py-1.5">
-                Move to {{ nextStatus(rx.status) }}
-              </button>
-            </div>
-          </div>
+          <span class="font-mono text-[12px] text-[#6b8196]">{{ rx.items?.length ?? 0 }}</span>
+          <span>
+            <span class="inline-block px-[9px] py-0.5 rounded-pill text-[10.5px] font-semibold"
+              [style.background]="priorityColor(rx.priority).bg" [style.color]="priorityColor(rx.priority).fg">
+              {{ rx.priority }}
+            </span>
+          </span>
+          <span><app-status-badge [status]="rx.status"></app-status-badge></span>
+          <span>
+            <button *ngIf="nextStatus(rx.status)" (click)="advance(rx)"
+              class="bg-[#f0ecfb] text-[#6b4bd6] border border-[#d9d0f6] rounded-[7px] px-[10px] py-[5px] text-[11.5px] font-semibold hover:bg-[#e6def8]">
+              {{ rx.status === 'Ready' ? 'Dispense…' : nextStatus(rx.status) }}
+            </button>
+            <span *ngIf="rx.status === 'Dispensed'" class="text-[11.5px] text-[#1d9a57] font-semibold">✓ Done</span>
+          </span>
         </div>
       </div>
     </div>
   `,
 })
 export class PharmacyComponent implements OnDestroy {
-  columns = STATUS_FLOW;
   form: RxForm = emptyForm();
   submitting = false;
   errorMsg = '';
@@ -214,6 +225,19 @@ export class PharmacyComponent implements OnDestroy {
     return rosterFor(this.doctors.data());
   }
 
+  priorityColor = priorityColor;
+
+  // Short, stable "Rx #" derived from the row's uuid -- the reference has a
+  // real sequential prescription number, which we don't generate; this is
+  // the closest honest equivalent using data that actually exists.
+  rxNumber(id: string) {
+    return 'RX-' + id.slice(0, 4).toUpperCase();
+  }
+
+  nextStatus(status: string) {
+    return NEXT_STATUS[status];
+  }
+
   // Matches the reference's Pharmacy KPI row (In Queue / Dispensed Today /
   // Low Stock / Expiring Soon). "Expiring Soon" in the reference tracks
   // batch expiry dates, which our simplified inventory model doesn't
@@ -229,18 +253,6 @@ export class PharmacyComponent implements OnDestroy {
       { label: 'Low Stock', value: String(this.inventory.data().filter((i: any) => i.reorder != null && i.stock <= i.reorder).length), icon: 'ph-trend-down', tintKey: 'amber' },
       { label: 'STAT Orders', value: String(rx.filter((r: any) => r.priority === 'STAT' && r.status !== 'Dispensed').length), icon: 'ph-lightning', tintKey: 'red' },
     ];
-  }
-
-  itemsFor(col: string) {
-    return this.prescriptions.data().filter((rx: any) => rx.status === col);
-  }
-
-  nextStatus(status: string) {
-    return NEXT_STATUS[status];
-  }
-
-  priorityStyle(priority: string) {
-    return PRIORITY_STYLE[priority] ?? PRIORITY_STYLE['Routine'];
   }
 
   isLowStock(inv: any) {
