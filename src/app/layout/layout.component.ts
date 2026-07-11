@@ -51,7 +51,7 @@ import { groupedModulesForRole, roleLabel, routeFor, ROLES } from '../core/modul
       <!-- Main column -->
       <div class="flex-1 flex flex-col h-full min-w-0">
         <header class="h-[52px] flex-none bg-white border-b border-[#e2e8ee] flex items-center gap-4 px-[22px]">
-          <div class="text-[12.5px] text-[#6b8196] font-medium">Aarogya HIMS</div>
+          <div class="text-[12.5px] text-[#6b8196] font-medium">Aarogya HIMS · Live</div>
           <div class="flex-1"></div>
           <div class="text-right leading-[1.15]">
             <div class="font-mono font-semibold text-[13px] text-[#14303f]">{{ clockTime() }}</div>
