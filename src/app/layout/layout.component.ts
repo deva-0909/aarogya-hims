@@ -62,7 +62,7 @@ interface PatientResult {
       <!-- Main column -->
       <div class="flex-1 flex flex-col h-full min-w-0">
         <header class="h-[60px] flex-none bg-white border-b border-[#e2e8ee] flex items-center gap-4 px-[22px] relative z-30">
-          <div class="text-[12.5px] text-[#6b8196] font-medium flex-none">{{ activeModule()?.name ?? 'Aarogya HIMS' }}</div>
+          <div class="text-[12.5px] text-[#6b8196] font-medium flex-none">{{ breadcrumb() }}</div>
           <div class="flex-1"></div>
 
           <!-- Global patient search -->
@@ -196,6 +196,10 @@ export class LayoutComponent implements OnInit, OnDestroy {
   role = computed(() => this.roleService.role());
   groups = computed(() => groupedModulesForRole(this.role()));
   activeModule = signal(moduleByRoute('front-office'));
+  breadcrumb = computed(() => {
+    const mod = this.activeModule();
+    return mod ? `${mod.group}  \u203a  ${mod.short}` : 'Aarogya HIMS';
+  });
 
   roleKeys = Object.keys(ROLES);
   roleLabel = roleLabel;

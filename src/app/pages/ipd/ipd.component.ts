@@ -5,11 +5,17 @@ import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { Doctor, bookableDoctors } from '../../core/doctors';
 
-const STATUS_STYLE: Record<string, string> = {
-  available: 'bg-success-bg text-success-fg border-success-fg/20',
-  occupied: 'bg-danger-bg text-danger-fg border-danger-fg/20',
-  reserved: 'bg-warning-bg text-warning-fg border-warning-fg/20',
-  cleaning: 'bg-line-2 text-body-2 border-line-3',
+// Exact colors from the reference prototype's BED color map.
+const BED_STYLE: Record<string, { bg: string; fg: string; brd: string }> = {
+  occupied: { bg: '#e9eff6', fg: '#2a4866', brd: '#cfdcec' },
+  available: { bg: '#e4f4e8', fg: '#1f7a42', brd: '#bfe6c9' },
+  reserved: { bg: '#fdf2da', fg: '#97600a', brd: '#f0dcab' },
+  cleaning: { bg: '#eef1f4', fg: '#6b7d8f', brd: '#dde3ea' },
+};
+const BED_CAPTION: Record<string, string> = {
+  available: 'Available',
+  reserved: 'Reserved',
+  cleaning: 'Cleaning',
 };
 
 interface AdmitForm {
@@ -24,21 +30,42 @@ const emptyForm = (): AdmitForm => ({ name: '', mrn: '', age: '', sex: 'F', dx: 
   imports: [CommonModule, FormsModule],
   template: `
     <div>
-
       <div *ngIf="beds.loading()" class="text-body-2">Loading…</div>
 
-      <div *ngFor="let ward of wards()" class="mb-6">
-        <h2 class="text-sm font-semibold text-ink-2 mb-2">{{ ward }}</h2>
-        <div class="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-9 gap-2">
+      <!-- Legend, matching the reference exactly -->
+      <div class="flex gap-[18px] items-center flex-wrap text-[12px] text-[#5f7689] mb-4">
+        <span class="flex items-center gap-1.5">
+          <span class="w-[13px] h-[13px] rounded-[4px]" style="background:#e9eff6;border:1px solid #cfdcec"></span>Occupied
+        </span>
+        <span class="flex items-center gap-1.5">
+          <span class="w-[13px] h-[13px] rounded-[4px]" style="background:#e4f4e8;border:1px solid #bfe6c9"></span>Available
+        </span>
+        <span class="flex items-center gap-1.5">
+          <span class="w-[13px] h-[13px] rounded-[4px]" style="background:#fdf2da;border:1px solid #f0dcab"></span>Reserved
+        </span>
+        <span class="flex items-center gap-1.5">
+          <span class="w-[13px] h-[13px] rounded-[4px]" style="background:#eef1f4;border:1px solid #dde3ea"></span>Cleaning
+        </span>
+      </div>
+
+      <div *ngFor="let ward of wards()" class="bg-white border border-line-1 rounded-[14px] p-[16px_18px] mb-4">
+        <div class="flex items-center justify-between">
+          <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">{{ ward }}</h3>
+          <span class="font-mono text-[12px] font-medium text-[#6b8196]">{{ occupiedCount(ward) }}/{{ bedsFor(ward).length }} occupied</span>
+        </div>
+        <div class="grid gap-[9px] mt-[13px]" style="grid-template-columns:repeat(auto-fill,minmax(98px,1fr))">
           <button
             *ngFor="let bed of bedsFor(ward)"
             (click)="onBedClick(bed)"
-            [class]="'text-left border rounded-[10px] p-2.5 ' + (statusStyle(bed.status))"
+            class="text-left rounded-[10px] px-[10px] py-[9px] cursor-pointer min-h-[58px] flex flex-col justify-between hover:brightness-[.97]"
+            [style.background]="bedStyle(bed.status).bg"
+            [style.border]="'1px solid ' + bedStyle(bed.status).brd"
             [title]="bed.status === 'occupied' ? 'Click to discharge' : bed.status === 'available' ? 'Click to admit' : bed.status"
           >
-            <div class="font-mono text-[12px] font-semibold">{{ bed.label }}</div>
-            <div class="text-[10.5px] capitalize">{{ bed.status }}</div>
-            <div *ngIf="bed.patient" class="text-[11px] truncate mt-0.5">{{ bed.patient }}</div>
+            <span class="font-mono text-[11.5px] font-semibold" [style.color]="bedStyle(bed.status).fg">{{ bed.label }}</span>
+            <span class="text-[11px] truncate opacity-[.85]" [style.color]="bedStyle(bed.status).fg">
+              {{ bed.status === 'occupied' ? bed.patient : caption(bed.status) }}
+            </span>
           </button>
         </div>
       </div>
@@ -134,8 +161,16 @@ export class IpdComponent implements OnDestroy {
     return this.beds.data().filter((b: any) => b.ward === ward);
   }
 
-  statusStyle(status: string) {
-    return STATUS_STYLE[status] ?? STATUS_STYLE['cleaning'];
+  bedStyle(status: string) {
+    return BED_STYLE[status] ?? BED_STYLE['cleaning'];
+  }
+
+  caption(status: string) {
+    return BED_CAPTION[status] ?? status;
+  }
+
+  occupiedCount(ward: string) {
+    return this.bedsFor(ward).filter((b: any) => b.status === 'occupied').length;
   }
 
   onBedClick(bed: any) {
@@ -198,7 +233,19 @@ export class IpdComponent implements OnDestroy {
 
   async dischargeBed(bed: any) {
     if (!confirm(`Discharge ${bed.patient} from ${bed.label}? Bed will be marked for cleaning.`)) return;
-    await this.supabaseService.client
+    const client = this.supabaseService.client;
+
+    // Close out the matching open admission record so Discharges KPIs and
+    // any future length-of-stay reporting have real data to work with --
+    // this was previously never set, silently leaving every admission "open."
+    const { error: admitErr } = await client
+      .from('admissions')
+      .update({ discharged_at: new Date().toISOString() })
+      .eq('bed_id', bed.id)
+      .is('discharged_at', null);
+    if (admitErr) console.error('Failed to close admission record:', admitErr);
+
+    await client
       .from('beds')
       .update({ status: 'cleaning', patient: null, mrn: null, age: null, sex: null, dx: null, consultant: null })
       .eq('id', bed.id);
