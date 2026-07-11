@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const SESSION_TYPES = ['Post-op Mobilization', 'Neuro Rehab', 'Sports Injury', 'Chronic Pain', 'Respiratory Physio', 'Geriatric'];
 const STATUS_STYLE: Record<string, string> = {
@@ -20,9 +21,11 @@ const emptyForm = (): SessionForm => ({ patient: '', mrn: '', therapist: '', ses
 @Component({
   selector: 'app-physiotherapy',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
+
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
         <form (ngSubmit)="createSession()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 xl:col-span-1 h-fit">
@@ -114,6 +117,24 @@ export class PhysiotherapyComponent implements OnDestroy {
 
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.sessions = this.realtime.watch('physio_sessions', (q) => q.order('scheduled_date', { ascending: false }));
+  }
+
+  // The reference's "Avg Pain Score" and "Active Plans" track a pain-
+  // tracking and treatment-plan system we don't model (sessions only) --
+  // replaced with real attendance metrics instead.
+  kpis(): KpiItem[] {
+    const all = this.sessions.data();
+    const today = new Date().toISOString().slice(0, 10);
+    const todaySessions = all.filter((s: any) => s.scheduled_date === today);
+    const completedToday = todaySessions.filter((s: any) => s.status === 'Completed');
+    const noShows = all.filter((s: any) => s.status === 'No-show').length;
+    const noShowRate = all.length ? Math.round((noShows / all.length) * 100) : 0;
+    return [
+      { label: 'Sessions Today', value: String(todaySessions.length), icon: 'ph-person-simple-walk', tintKey: 'teal' },
+      { label: 'Completed', value: `${completedToday.length}/${todaySessions.length}`, icon: 'ph-check-circle', tintKey: 'green' },
+      { label: 'No-show Rate', value: noShowRate + '%', icon: 'ph-warning', tintKey: 'red' },
+      { label: 'Total Sessions', value: String(all.length), icon: 'ph-clipboard-text', tintKey: 'indigo' },
+    ];
   }
 
   statusStyle(status: string) {

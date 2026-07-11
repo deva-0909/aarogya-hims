@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const ROUTES = ['PO', 'IV', 'IM', 'SC', 'Topical', 'Inhalation'];
 const STATUS_STYLE: Record<string, string> = {
@@ -20,9 +21,11 @@ const emptyForm = (): MarForm => ({ patient: '', mrn: '', ward: '', drug: '', do
 @Component({
   selector: 'app-nursing',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
+
 
       <div class="grid grid-cols-1 xl:grid-cols-4 gap-5">
         <form (ngSubmit)="createEntry()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 xl:col-span-1 h-fit">
@@ -129,6 +132,23 @@ export class NursingComponent implements OnDestroy {
 
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.entries = this.realtime.watch('nursing_mar', (q) => q.order('created_at', { ascending: false }));
+  }
+
+  // Matches the reference's Nursing KPI row for the first 2 cards exactly
+  // (Meds Due, Med Compliance). The reference's "Tasks Due"/"Overdue" track
+  // a separate nursing-tasks concept we don't model -- replaced with real
+  // Given/Missed counts from the same MAR data instead.
+  kpis(): KpiItem[] {
+    const all = this.entries.data();
+    const given = all.filter((e: any) => e.status === 'Given').length;
+    const missed = all.filter((e: any) => e.status === 'Missed').length;
+    const compliance = given + missed > 0 ? Math.round((given / (given + missed)) * 100) : 100;
+    return [
+      { label: 'Meds Due', value: String(all.filter((e: any) => e.status === 'Due').length), icon: 'ph-pill', tintKey: 'amber' },
+      { label: 'Med Compliance', value: compliance + '%', icon: 'ph-check-circle', tintKey: 'teal' },
+      { label: 'Given', value: String(given), icon: 'ph-list-checks', tintKey: 'blue' },
+      { label: 'Missed', value: String(missed), icon: 'ph-clock-countdown', tintKey: 'red' },
+    ];
   }
 
   statusStyle(status: string) {

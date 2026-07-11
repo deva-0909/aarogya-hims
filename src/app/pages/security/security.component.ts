@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 interface VisitorForm {
   visitor_name: string; purpose: string; visiting: string; id_type: string;
@@ -12,9 +13,11 @@ const emptyForm = (): VisitorForm => ({ visitor_name: '', purpose: '', visiting:
 @Component({
   selector: 'app-security',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
+
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
         <form (ngSubmit)="checkIn()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 xl:col-span-1 h-fit">
@@ -100,6 +103,22 @@ export class SecurityComponent implements OnDestroy {
 
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.log = this.realtime.watch('security_visitor_log', (q) => q.order('entry_time', { ascending: false }));
+  }
+
+  // The reference's "Active Incidents"/"Cameras Online" track security-
+  // incident and CCTV systems we don't model -- replaced with real visitor-
+  // log metrics instead.
+  kpis(): KpiItem[] {
+    const all = this.log.data();
+    const todayStart = new Date().toISOString().slice(0, 10);
+    const passesToday = all.filter((v: any) => (v.entry_time ?? '').slice(0, 10) === todayStart);
+    const checkedOutToday = passesToday.filter((v: any) => v.status === 'Checked Out');
+    return [
+      { label: 'Visitors Inside', value: String(this.onPremises().length), icon: 'ph-users', tintKey: 'blue' },
+      { label: 'Passes Today', value: String(passesToday.length), icon: 'ph-identification-card', tintKey: 'teal' },
+      { label: 'Checked Out Today', value: String(checkedOutToday.length), icon: 'ph-sign-out', tintKey: 'green' },
+      { label: 'Total Logged', value: String(all.length), icon: 'ph-clipboard-text', tintKey: 'indigo' },
+    ];
   }
 
   onPremises() {

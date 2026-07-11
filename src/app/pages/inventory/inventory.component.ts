@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const CATEGORIES = ['Medicine', 'Consumable', 'Equipment', 'Surgical', 'Other'];
 
@@ -14,9 +15,11 @@ const emptyForm = (): ItemForm => ({ name: '', category: CATEGORIES[0], stock: '
 @Component({
   selector: 'app-inventory',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
+
 
       <div *ngIf="lowStockCount() > 0" class="bg-warning-bg text-warning-fg rounded-card px-4 py-2.5 text-sm font-medium mb-4 flex items-center gap-2">
         <i class="ph ph-warning-circle"></i>
@@ -126,6 +129,22 @@ export class InventoryComponent implements OnDestroy {
 
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.items = this.realtime.watch('inventory_items', (q) => q.order('name'));
+  }
+
+  // Matches the reference's Inventory KPI row closely -- "Open POs" and
+  // "Vendors" in the reference track a PO/vendor system this module doesn't
+  // model (that lives in Purchase & Procurement instead) -- replaced with
+  // real inventory-only metrics rather than showing a misleading "0".
+  kpis(): KpiItem[] {
+    const all = this.items.data();
+    const stockValue = all.reduce((sum: number, i: any) => sum + Number(i.stock || 0) * Number(i.cost || 0), 0);
+    const categories = new Set(all.map((i: any) => i.category)).size;
+    return [
+      { label: 'Stock Value', value: '\u20b9' + stockValue.toLocaleString('en-IN'), icon: 'ph-package', tintKey: 'teal' },
+      { label: 'Low Stock Items', value: String(all.filter((i: any) => this.isLowStock(i)).length), icon: 'ph-trend-down', tintKey: 'amber' },
+      { label: 'Categories', value: String(categories), icon: 'ph-squares-four', tintKey: 'blue' },
+      { label: 'Total Items', value: String(all.length), icon: 'ph-storefront', tintKey: 'indigo' },
+    ];
   }
 
   filteredItems() {

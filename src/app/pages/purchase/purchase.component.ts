@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const STAGES = ['Pending Approval', 'Approved', 'PO Raised', 'Received'];
 const NEXT_STAGE: Record<string, string> = {
@@ -19,9 +20,11 @@ const emptyForm = (): ReqForm => ({ item: '', quantity: '1', requested_by: '', n
 @Component({
   selector: 'app-purchase',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
+
 
       <div class="grid grid-cols-1 xl:grid-cols-4 gap-5">
         <form (ngSubmit)="createRequisition()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 xl:col-span-1 h-fit">
@@ -97,6 +100,21 @@ export class PurchaseComponent implements OnDestroy {
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.requisitions = this.realtime.watch('purchase_requisitions', (q) => q.order('created_at', { ascending: false }));
     this.staff = this.realtime.watch('staff_directory', (q) => q.order('full_name'));
+  }
+
+  // The reference's "Spend (MTD)" and "Vendors" need pricing and a vendor
+  // master list we don't track on requisitions (item/quantity/stage only)
+  // -- replaced with real requisition-flow metrics instead.
+  kpis(): KpiItem[] {
+    const all = this.requisitions.data();
+    const monthStart = new Date().toISOString().slice(0, 7);
+    const receivedThisMonth = all.filter((r: any) => r.stage === 'Received' && (r.created_at ?? '').slice(0, 7) === monthStart);
+    return [
+      { label: 'Open Requisitions', value: String(all.filter((r: any) => r.stage === 'Pending Approval').length), icon: 'ph-clipboard-text', tintKey: 'blue' },
+      { label: 'Open POs', value: String(all.filter((r: any) => r.stage === 'PO Raised').length), icon: 'ph-shopping-cart-simple', tintKey: 'amber' },
+      { label: 'Received (MTD)', value: String(receivedThisMonth.length), icon: 'ph-check-circle', tintKey: 'green' },
+      { label: 'Total Requisitions', value: String(all.length), icon: 'ph-storefront', tintKey: 'indigo' },
+    ];
   }
 
   itemsFor(stage: string) {

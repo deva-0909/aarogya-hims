@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
+import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 
 const STAGES = ['Assigned', 'En Route', 'On Scene', 'Transporting', 'At Hospital', 'Completed'];
 const NEXT_STAGE: Record<string, string> = {
@@ -26,9 +27,11 @@ const emptyForm = (): TripForm => ({ vehicle: '', patient: '', priority: 'Routin
 @Component({
   selector: 'app-ambulance',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KpiRowComponent],
   template: `
     <div>
+      <app-kpi-row [items]="kpis()"></app-kpi-row>
+
 
       <div class="grid grid-cols-1 xl:grid-cols-4 gap-5 mb-6">
         <form (ngSubmit)="createTrip()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 xl:col-span-1 h-fit">
@@ -120,6 +123,22 @@ export class AmbulanceComponent implements OnDestroy {
 
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.trips = this.realtime.watch('ambulance_trips', (q) => q.order('created_at', { ascending: false }));
+  }
+
+  // The reference's "Fleet Available"/"Avg Response"/"On-time Rate" assume
+  // a tracked vehicle fleet and response-time timestamps we don't model
+  // (trips reference a vehicle by free text, not a fleet roster) --
+  // replaced with real metrics from actual trip data instead.
+  kpis(): KpiItem[] {
+    const all = this.trips.data();
+    const todayStart = new Date().toISOString().slice(0, 10);
+    const completedToday = all.filter((t: any) => t.stage === 'Completed' && (t.created_at ?? '').slice(0, 10) === todayStart);
+    return [
+      { label: 'Active Trips', value: String(all.filter((t: any) => t.stage !== 'Completed').length), icon: 'ph-ambulance', tintKey: 'blue' },
+      { label: 'Emergency Priority', value: String(all.filter((t: any) => t.priority === 'Emergency' && t.stage !== 'Completed').length), icon: 'ph-siren', tintKey: 'red' },
+      { label: 'MLC Trips', value: String(all.filter((t: any) => t.mlc).length), icon: 'ph-scales', tintKey: 'amber' },
+      { label: 'Completed Today', value: String(completedToday.length), icon: 'ph-check-circle', tintKey: 'green' },
+    ];
   }
 
   itemsFor(stage: string) {
