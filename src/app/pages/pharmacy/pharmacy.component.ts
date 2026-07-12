@@ -8,6 +8,7 @@ import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 import { StatusBadgeComponent } from '../../shared/status-badge.component';
 import { sortByPriorityThenTime } from '../../core/priority';
 import { checkAllergies, checkInteractions, SafetyWarning } from '../../core/drug-safety';
+import { PrintLetterheadComponent } from '../../shared/print-letterhead.component';
 
 interface RxItem {
   drug: string;
@@ -51,7 +52,7 @@ function emptyForm(): RxForm {
 @Component({
   selector: 'app-pharmacy',
   standalone: true,
-  imports: [CommonModule, FormsModule, KpiRowComponent, StatusBadgeComponent],
+  imports: [CommonModule, FormsModule, KpiRowComponent, StatusBadgeComponent, PrintLetterheadComponent],
   template: `
     <div>
       <app-kpi-row [items]="kpis()"></app-kpi-row>
@@ -202,12 +203,12 @@ function emptyForm(): RxForm {
           <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Dispensing Queue</h3>
         </div>
         <div class="grid px-[18px] py-[9px] bg-[#f7f9fb] border-b border-[#eef2f6] text-[10.5px] font-semibold tracking-[.4px] text-[#7d92a4] uppercase"
-          style="grid-template-columns:88px 1.5fr 50px 84px 104px 100px">
+          style="grid-template-columns:88px 1.5fr 50px 84px 104px 132px">
           <span>Rx #</span><span>Patient</span><span>Items</span><span>Priority</span><span>Status</span><span>Action</span>
         </div>
         <div *ngIf="prescriptions.data().length === 0" class="text-center text-body-2 text-sm py-8">No prescriptions in the queue.</div>
         <div *ngFor="let rx of sortedPrescriptions()" class="grid items-center px-[18px] py-[11px] border-b border-[#f1f4f8] text-[13px]"
-          style="grid-template-columns:88px 1.5fr 50px 84px 104px 100px">
+          style="grid-template-columns:88px 1.5fr 50px 84px 104px 132px">
           <span class="font-mono font-semibold text-[12px] text-[#6b4bd6]">{{ rxNumber(rx.id) }}</span>
           <div class="min-w-0">
             <div class="font-medium text-[#22384a] truncate">{{ rx.patient }}</div>
@@ -221,13 +222,58 @@ function emptyForm(): RxForm {
             </span>
           </span>
           <span><app-status-badge [status]="rx.status"></app-status-badge></span>
-          <span>
+          <span class="flex items-center gap-1.5">
             <button *ngIf="nextStatus(rx.status)" (click)="advance(rx)"
               class="bg-[#f0ecfb] text-[#6b4bd6] border border-[#d9d0f6] rounded-[7px] px-[10px] py-[5px] text-[11.5px] font-semibold hover:bg-[#e6def8]">
               {{ rx.status === 'Ready' ? 'Dispense…' : nextStatus(rx.status) }}
             </button>
             <span *ngIf="rx.status === 'Dispensed'" class="text-[11.5px] text-[#1d9a57] font-semibold">✓ Done</span>
+            <button (click)="printPrescription(rx)" title="Print prescription slip"
+              class="border border-line-1 bg-white hover:bg-line-2 rounded-[7px] w-[26px] h-[26px] flex items-center justify-center flex-none">
+              <i class="ph ph-printer text-[13px] text-body-1"></i>
+            </button>
           </span>
+        </div>
+      </div>
+
+      <!-- Printable prescription slip, hidden on screen, shown only via @media print -->
+      <div *ngIf="printingRx" class="print-area hidden">
+        <app-print-letterhead title="Prescription"></app-print-letterhead>
+        <div style="display:flex; justify-content:space-between; margin-bottom:16px; font-size:13px;">
+          <div>
+            <div style="font-weight:600; color:#12303f;">{{ printingRx.patient }}</div>
+            <div style="color:#5f7689;">{{ printingRx.mrn || '—' }} · {{ printingRx.ward || 'OPD' }}</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="color:#5f7689;">{{ rxNumber(printingRx.id) }}</div>
+            <div style="color:#5f7689;">{{ printingRx.created_at | date: 'mediumDate' }}</div>
+          </div>
+        </div>
+        <div style="font-size:12.5px; color:#5f7689; margin-bottom:12px;">Prescriber: {{ printingRx.prescriber }} · Priority: {{ printingRx.priority }}</div>
+        <table style="width:100%; border-collapse:collapse; font-size:13px;">
+          <thead>
+            <tr style="border-bottom:1px solid #dde5ee; text-align:left; color:#7d92a4; font-size:11px; text-transform:uppercase;">
+              <th style="padding:6px 0;">Drug</th>
+              <th style="padding:6px 0;">Dose</th>
+              <th style="padding:6px 0;">Frequency</th>
+              <th style="padding:6px 0;">Duration</th>
+              <th style="padding:6px 0; text-align:right;">Qty</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let item of printingRx.items" style="border-bottom:1px solid #f1f4f8;">
+              <td style="padding:8px 0; font-weight:600;">{{ item.drug }}</td>
+              <td style="padding:8px 0;">{{ item.dose }}</td>
+              <td style="padding:8px 0;">{{ item.freq }}</td>
+              <td style="padding:8px 0;">{{ item.dur }}</td>
+              <td style="padding:8px 0; text-align:right; font-family:monospace;">{{ item.qty }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top:32px; display:flex; justify-content:flex-end;">
+          <div style="text-align:center; font-size:11px; color:#8094a6;">
+            <div style="border-top:1px solid #dde5ee; padding-top:4px; width:180px;">Prescriber's signature</div>
+          </div>
         </div>
       </div>
     </div>
@@ -266,6 +312,16 @@ export class PharmacyComponent implements OnDestroy {
 
   sortedPrescriptions() {
     return sortByPriorityThenTime(this.prescriptions.data());
+  }
+
+  printingRx: any = null;
+
+  printPrescription(rx: any) {
+    this.printingRx = rx;
+    setTimeout(() => {
+      window.print();
+      this.printingRx = null;
+    }, 50);
   }
 
   rxNumber(id: string) {

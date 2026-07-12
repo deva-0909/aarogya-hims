@@ -5,6 +5,7 @@ import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { StatusBadgeComponent } from '../../shared/status-badge.component';
 import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
+import { PrintLetterheadComponent } from '../../shared/print-letterhead.component';
 
 const PAYMENT_MODES = ['Cash', 'UPI', 'Card', 'Insurance / TPA'];
 type BillTab = 'invoices' | 'payments' | 'analytics';
@@ -31,7 +32,7 @@ function shortId(id: string, prefix: string): string {
 @Component({
   selector: 'app-billing',
   standalone: true,
-  imports: [CommonModule, FormsModule, StatusBadgeComponent, KpiRowComponent],
+  imports: [CommonModule, FormsModule, StatusBadgeComponent, KpiRowComponent, PrintLetterheadComponent],
   template: `
     <div>
       <app-kpi-row [items]="kpis()"></app-kpi-row>
@@ -67,10 +68,60 @@ function shortId(id: string, prefix: string): string {
             <div class="font-mono font-semibold text-[14px] text-[#12303f]">₹{{ total(inv) | number }}</div>
             <div class="text-[10.5px] text-[#9aabbb]">Paid ₹{{ inv.paid | number }} · Due ₹{{ (total(inv) - inv.paid) | number }}</div>
           </div>
+          <button (click)="printInvoice(inv)"
+            class="border border-line-1 bg-white hover:bg-line-2 rounded-[7px] px-3 py-[7px] text-[11.5px] font-semibold whitespace-nowrap text-body-1">
+            <i class="ph ph-printer"></i> Print
+          </button>
           <button *ngIf="inv.status !== 'Paid'" (click)="openPay(inv)"
             class="bg-[#eaf5f3] text-[#0a6a60] border border-[#c9e7e2] hover:bg-[#dff0ed] rounded-[7px] px-3 py-[7px] text-[11.5px] font-semibold whitespace-nowrap">
             Record Payment
           </button>
+        </div>
+      </div>
+
+      <!-- Printable invoice, hidden on screen, shown only via @media print in styles.css -->
+      <div *ngIf="printingInvoice" class="print-area hidden">
+        <app-print-letterhead title="Invoice"></app-print-letterhead>
+        <div style="display:flex; justify-content:space-between; margin-bottom:16px; font-size:13px;">
+          <div>
+            <div style="font-weight:600; color:#12303f;">{{ printingInvoice.patient }}</div>
+            <div style="color:#5f7689;">{{ printingInvoice.mrn || '—' }} · {{ printingInvoice.dept }}</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="color:#5f7689;">Invoice {{ shortId(printingInvoice.id, 'INV') }}</div>
+            <div style="color:#5f7689;">{{ printingInvoice.created_at | date: 'mediumDate' }}</div>
+          </div>
+        </div>
+        <table style="width:100%; border-collapse:collapse; font-size:13px; margin-bottom:16px;">
+          <thead>
+            <tr style="border-bottom:1px solid #dde5ee; text-align:left; color:#7d92a4; font-size:11px; text-transform:uppercase;">
+              <th style="padding:6px 0;">Description</th>
+              <th style="padding:6px 0; text-align:right;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let item of printingInvoice.items" style="border-bottom:1px solid #f1f4f8;">
+              <td style="padding:8px 0;">{{ item.d }}</td>
+              <td style="padding:8px 0; text-align:right; font-family:monospace;">₹{{ item.amt | number }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="display:flex; justify-content:flex-end;">
+          <div style="width:220px; font-size:13px;">
+            <div style="display:flex; justify-content:space-between; padding:4px 0;">
+              <span style="color:#5f7689;">Total</span>
+              <span style="font-family:monospace; font-weight:600;">₹{{ total(printingInvoice) | number }}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; padding:4px 0;">
+              <span style="color:#5f7689;">Paid</span>
+              <span style="font-family:monospace;">₹{{ printingInvoice.paid | number }}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; padding:4px 0; border-top:1px solid #dde5ee; margin-top:4px;">
+              <span style="color:#12303f; font-weight:600;">Due</span>
+              <span style="font-family:monospace; font-weight:700;">₹{{ (total(printingInvoice) - printingInvoice.paid) | number }}</span>
+            </div>
+            <div style="margin-top:10px; font-size:11px; color:#8094a6;">Status: {{ printingInvoice.status }} · Payer: {{ printingInvoice.payer }}</div>
+          </div>
         </div>
       </div>
 
@@ -208,6 +259,18 @@ export class BillingComponent implements OnDestroy {
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.invoices = this.realtime.watch('invoices', (q) => q.order('created_at', { ascending: false }));
     this.payments = this.realtime.watch('payments', (q) => q.order('created_at', { ascending: false }));
+  }
+
+  printingInvoice: any = null;
+
+  printInvoice(inv: any) {
+    this.printingInvoice = inv;
+    // Wait one tick so Angular renders the print-area content before the
+    // browser's print dialog captures the page.
+    setTimeout(() => {
+      window.print();
+      this.printingInvoice = null;
+    }, 50);
   }
 
   total(inv: any) {

@@ -13,3 +13,29 @@ body {
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #c9d4df; border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* Print stylesheet: any component can mark a hidden template with
+   class="print-area" and call window.print() -- everything else (sidebar,
+   header, forms, buttons) disappears, and only the print-area content is
+   shown, laid out for paper rather than screen. Used by Billing invoices,
+   Pharmacy prescription slips, and IPD discharge summaries. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    display: block !important;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 24px;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

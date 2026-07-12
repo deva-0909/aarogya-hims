@@ -5,6 +5,7 @@ import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { Doctor, bookableDoctors } from '../../core/doctors';
 import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
+import { PrintLetterheadComponent } from '../../shared/print-letterhead.component';
 
 // Exact colors from the reference prototype's BED color map.
 const BED_STYLE: Record<string, { bg: string; fg: string; brd: string }> = {
@@ -28,7 +29,7 @@ const emptyForm = (): AdmitForm => ({ name: '', mrn: '', age: '', sex: 'F', dx: 
 @Component({
   selector: 'app-ipd',
   standalone: true,
-  imports: [CommonModule, FormsModule, KpiRowComponent],
+  imports: [CommonModule, FormsModule, KpiRowComponent, PrintLetterheadComponent],
   template: `
     <div>
       <app-kpi-row [items]="kpis()"></app-kpi-row>
@@ -132,6 +133,40 @@ const emptyForm = (): AdmitForm => ({ name: '', mrn: '', age: '', sex: 'F', dx: 
             </button>
           </div>
         </form>
+      </div>
+
+      <!-- Printable discharge summary, hidden on screen, shown only via @media print -->
+      <div *ngIf="printingDischarge" class="print-area hidden">
+        <app-print-letterhead title="Discharge Summary"></app-print-letterhead>
+        <div style="font-size:13px; margin-bottom:16px;">
+          <div style="font-weight:600; color:#12303f; font-size:15px;">{{ printingDischarge.patient }}</div>
+          <div style="color:#5f7689; margin-top:2px;">{{ printingDischarge.mrn || '—' }} · {{ printingDischarge.age }}{{ printingDischarge.sex }} · {{ printingDischarge.ward }}, {{ printingDischarge.label }}</div>
+        </div>
+        <table style="width:100%; border-collapse:collapse; font-size:13px; margin-bottom:16px;">
+          <tbody>
+            <tr style="border-bottom:1px solid #f1f4f8;">
+              <td style="padding:8px 0; color:#7d92a4; width:160px;">Admitted</td>
+              <td style="padding:8px 0;">{{ printingDischarge.admitted_at ? (printingDischarge.admitted_at | date: 'medium') : '—' }}</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f1f4f8;">
+              <td style="padding:8px 0; color:#7d92a4;">Discharged</td>
+              <td style="padding:8px 0;">{{ printingDischarge.discharged_at | date: 'medium' }}</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f1f4f8;">
+              <td style="padding:8px 0; color:#7d92a4;">Diagnosis</td>
+              <td style="padding:8px 0;">{{ printingDischarge.dx || '—' }}</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f1f4f8;">
+              <td style="padding:8px 0; color:#7d92a4;">Consultant</td>
+              <td style="padding:8px 0;">{{ printingDischarge.consultant || '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top:32px; display:flex; justify-content:flex-end;">
+          <div style="text-align:center; font-size:11px; color:#8094a6;">
+            <div style="border-top:1px solid #dde5ee; padding-top:4px; width:180px;">Consultant's signature</div>
+          </div>
+        </div>
       </div>
     </div>
   `,
@@ -255,18 +290,38 @@ export class IpdComponent implements OnDestroy {
     // Close out the matching open admission record so Discharges KPIs and
     // any future length-of-stay reporting have real data to work with --
     // this was previously never set, silently leaving every admission "open."
-    const { error: admitErr } = await client
+    const { data: admission, error: admitErr } = await client
       .from('admissions')
       .update({ discharged_at: new Date().toISOString() })
       .eq('bed_id', bed.id)
-      .is('discharged_at', null);
+      .is('discharged_at', null)
+      .select()
+      .single();
     if (admitErr) console.error('Failed to close admission record:', admitErr);
+
+    // Snapshot the bed/patient details before clearing the bed, so the
+    // discharge summary can still be printed after the row is wiped.
+    const dischargeSnapshot = { ...bed, admitted_at: admission?.admitted_at, discharged_at: admission?.discharged_at ?? new Date().toISOString() };
 
     await client
       .from('beds')
       .update({ status: 'cleaning', patient: null, mrn: null, age: null, sex: null, dx: null, consultant: null })
       .eq('id', bed.id);
     await this.beds.refresh();
+
+    if (confirm('Print a discharge summary for this patient?')) {
+      this.printDischargeSummary(dischargeSnapshot);
+    }
+  }
+
+  printingDischarge: any = null;
+
+  printDischargeSummary(snapshot: any) {
+    this.printingDischarge = snapshot;
+    setTimeout(() => {
+      window.print();
+      this.printingDischarge = null;
+    }, 50);
   }
 
   ngOnDestroy() {
