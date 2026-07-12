@@ -13,7 +13,7 @@ const DEPARTMENTS = [
 ];
 
 interface RegForm {
-  name: string; age: string; sex: string; phone: string; dept: string; doctor: string; type: string;
+  name: string; age: string; sex: string; phone: string; dept: string; doctor: string; type: string; allergies: string;
 }
 
 function fmtWait(iso: string | null | undefined): string {
@@ -95,6 +95,12 @@ function fmtWait(iso: string | null | undefined): string {
               <option>Emergency</option>
             </select>
           </div>
+          <div>
+            <label class="block text-xs font-medium text-body-1 mb-1">Known allergies (optional)</label>
+            <input [(ngModel)]="form.allergies" name="allergies" placeholder="e.g. Penicillin, Sulfa -- comma-separated"
+              class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
+            <p class="text-[10.5px] text-muted-1 mt-1">Recorded at Moderate severity by default -- refine severity later via the patient's allergy list.</p>
+          </div>
 
           <div *ngIf="errorMsg" class="text-xs text-danger-fg bg-danger-bg rounded-[9px] px-3 py-2">{{ errorMsg }}</div>
 
@@ -158,7 +164,7 @@ function fmtWait(iso: string | null | undefined): string {
 export class FrontOfficeComponent implements OnDestroy {
   fmtWait = fmtWait;
   departments = DEPARTMENTS;
-  form: RegForm = { name: '', age: '', sex: 'F', phone: '', dept: DEPARTMENTS[0], doctor: '', type: 'New' };
+  form: RegForm = { name: '', age: '', sex: 'F', phone: '', dept: DEPARTMENTS[0], doctor: '', type: 'New', allergies: '' };
   submitting = false;
   errorMsg = '';
 
@@ -240,6 +246,19 @@ export class FrontOfficeComponent implements OnDestroy {
         .single();
       if (patientErr) throw patientErr;
 
+      const allergenNames = this.form.allergies
+        .split(',')
+        .map((a) => a.trim())
+        .filter((a) => a.length > 0);
+      if (allergenNames.length > 0) {
+        const { error: allergyErr } = await client.from('patient_allergies').insert(
+          allergenNames.map((allergen) => ({ patient_id: patient.id, allergen, severity: 'Moderate' }))
+        );
+        // Non-fatal: registration already succeeded -- an allergy insert
+        // failure shouldn't block the whole workflow, just surface it.
+        if (allergyErr) console.error('Failed to save allergies:', allergyErr);
+      }
+
       const { error: regErr } = await client.from('front_desk_registrations').insert({
         patient_id: patient.id,
         token,
@@ -269,7 +288,7 @@ export class FrontOfficeComponent implements OnDestroy {
       if (opdErr) throw opdErr;
 
       const dept = this.form.dept;
-      this.form = { name: '', age: '', sex: 'F', phone: '', dept, doctor: '', type: 'New' };
+      this.form = { name: '', age: '', sex: 'F', phone: '', dept, doctor: '', type: 'New', allergies: '' };
       await this.registrations.refresh();
     } catch (err: any) {
       this.errorMsg = err.message;

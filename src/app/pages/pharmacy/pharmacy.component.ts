@@ -7,6 +7,7 @@ import { Doctor, rosterFor } from '../../core/doctors';
 import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 import { StatusBadgeComponent } from '../../shared/status-badge.component';
 import { sortByPriorityThenTime } from '../../core/priority';
+import { checkAllergies, checkInteractions, SafetyWarning } from '../../core/drug-safety';
 
 interface RxItem {
   drug: string;
@@ -17,12 +18,12 @@ interface RxItem {
 }
 
 interface RxForm {
+  patient_id: string | null;
   patient: string;
   mrn: string;
   prescriber: string;
   ward: string;
   priority: 'Routine' | 'Urgent' | 'STAT';
-  allergy: string;
   items: RxItem[];
 }
 
@@ -44,7 +45,7 @@ function emptyItem(): RxItem {
   return { drug: '', dose: '', freq: '', dur: '', qty: 1 };
 }
 function emptyForm(): RxForm {
-  return { patient: '', mrn: '', prescriber: '', ward: '', priority: 'Routine', allergy: '', items: [emptyItem()] };
+  return { patient_id: null, patient: '', mrn: '', prescriber: '', ward: '', priority: 'Routine', items: [emptyItem()] };
 }
 
 @Component({
@@ -60,23 +61,39 @@ function emptyForm(): RxForm {
         <form (ngSubmit)="createPrescription()" class="bg-white border border-line-1 rounded-card p-5 space-y-3 xl:col-span-1 h-fit">
           <h2 class="font-semibold text-ink-2 text-sm mb-1">New Prescription</h2>
 
-          <div>
-            <label class="block text-xs font-medium text-body-1 mb-1">Patient name</label>
-            <input required [(ngModel)]="form.patient" name="patient"
-              class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
-          </div>
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="block text-xs font-medium text-body-1 mb-1">MRN</label>
-              <input [(ngModel)]="form.mrn" name="mrn"
-                class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
+          <div class="relative">
+            <label class="block text-xs font-medium text-body-1 mb-1">Patient</label>
+            <input
+              [(ngModel)]="patientQuery"
+              (ngModelChange)="onPatientQueryChange($event)"
+              (focus)="patientDropdownOpen = true"
+              name="patientQuery"
+              placeholder="Search by name or MRN…"
+              class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand"
+            />
+            <div *ngIf="patientDropdownOpen && matchingPatients().length > 0"
+              class="absolute z-30 top-[62px] left-0 right-0 bg-white border border-line-1 rounded-[9px] shadow-lg max-h-[180px] overflow-y-auto">
+              <div *ngFor="let p of matchingPatients()" (click)="selectPatient(p)"
+                class="px-3 py-2 text-[12.5px] cursor-pointer hover:bg-line-2 border-b border-line-2 last:border-0">
+                <div class="font-medium text-ink-2">{{ p.name }}</div>
+                <div class="text-[11px] text-muted-1">{{ p.mrn }} · {{ p.age }}{{ p.sex }}</div>
+              </div>
             </div>
-            <div>
-              <label class="block text-xs font-medium text-body-1 mb-1">Ward / OPD</label>
-              <input [(ngModel)]="form.ward" name="ward" placeholder="e.g. GA-02 or OPD"
-                class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
+            <div *ngIf="!form.patient_id && form.patient" class="text-[11px] text-warning-fg mt-1">
+              No matching patient record selected -- prescribing to a free-text name, allergy checking unavailable.
             </div>
           </div>
+
+          <!-- Known allergies for the selected patient -->
+          <div *ngIf="form.patient_id" class="border border-line-1 rounded-[9px] p-2.5">
+            <div class="text-[11px] font-semibold text-body-1 mb-1">Known allergies</div>
+            <div *ngIf="patientAllergiesFor(form.patient_id).length === 0" class="text-[11.5px] text-muted-1">None on file.</div>
+            <div *ngFor="let a of patientAllergiesFor(form.patient_id)" class="text-[11.5px] mb-0.5"
+              [class]="a.severity === 'Severe' ? 'text-danger-fg font-semibold' : 'text-warning-fg'">
+              {{ a.allergen }} ({{ a.severity }}){{ a.reaction ? ' -- ' + a.reaction : '' }}
+            </div>
+          </div>
+
           <div>
             <label class="block text-xs font-medium text-body-1 mb-1">Prescriber</label>
             <select required [(ngModel)]="form.prescriber" name="prescriber"
@@ -94,11 +111,6 @@ function emptyForm(): RxForm {
               <option value="STAT">STAT</option>
             </select>
           </div>
-          <div>
-            <label class="block text-xs font-medium text-body-1 mb-1">Known allergies</label>
-            <input [(ngModel)]="form.allergy" name="allergy" placeholder="e.g. Penicillin — leave blank if none"
-              class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
-          </div>
 
           <div>
             <div class="flex items-center justify-between mb-1">
@@ -112,12 +124,13 @@ function emptyForm(): RxForm {
                 <input
                   required
                   [(ngModel)]="item.drug"
+                  (ngModelChange)="onDrugChange()"
                   [name]="'drug' + i"
                   list="inventory-names"
                   placeholder="Drug name"
                   class="flex-1 border border-line-1 rounded-[7px] px-2 py-1.5 text-[12.5px] outline-none focus:border-brand"
                 />
-                <button type="button" *ngIf="form.items.length > 1" (click)="removeItem(i)"
+                <button type="button" *ngIf="form.items.length > 1" (click)="removeItem(i); onDrugChange()"
                   class="text-danger-fg text-[12px] px-1.5 flex-none">✕</button>
               </div>
               <div class="grid grid-cols-4 gap-1.5">
@@ -136,8 +149,21 @@ function emptyForm(): RxForm {
             </datalist>
           </div>
 
+          <!-- Live safety warnings: allergy cross-checks + drug-drug interactions -->
+          <div *ngIf="warnings().length > 0" class="space-y-1.5">
+            <div *ngFor="let w of warnings()" class="rounded-[9px] px-3 py-2 text-[12px] flex items-start gap-2"
+              [class]="w.severity === 'Severe' ? 'bg-danger-bg text-danger-fg' : 'bg-warning-bg text-warning-fg'">
+              <i class="ph {{ w.kind === 'allergy' ? 'ph-warning-octagon' : 'ph-flask' }} mt-0.5 flex-none"></i>
+              <span>{{ w.message }}</span>
+            </div>
+            <label *ngIf="hasSevereWarning()" class="flex items-center gap-2 text-[12px] text-danger-fg font-medium">
+              <input type="checkbox" [(ngModel)]="severeAcknowledged" name="severeAcknowledged" class="rounded" />
+              I acknowledge the severe warning(s) above and choose to proceed
+            </label>
+          </div>
+
           <div *ngIf="errorMsg" class="text-xs text-danger-fg bg-danger-bg rounded-[9px] px-3 py-2">{{ errorMsg }}</div>
-          <button type="submit" [disabled]="submitting"
+          <button type="submit" [disabled]="submitting || (hasSevereWarning() && !severeAcknowledged)"
             class="w-full bg-brand hover:bg-brand-hover text-white rounded-[9px] py-2.5 text-sm font-semibold disabled:opacity-60">
             {{ submitting ? 'Sending to queue…' : 'Send to pharmacy queue' }}
           </button>
@@ -212,14 +238,24 @@ export class PharmacyComponent implements OnDestroy {
   submitting = false;
   errorMsg = '';
 
+  patientQuery = '';
+  patientDropdownOpen = false;
+  severeAcknowledged = false;
+
   prescriptions: RealtimeTableHandle<any>;
   inventory: RealtimeTableHandle<any>;
   doctors: RealtimeTableHandle<Doctor>;
+  patients: RealtimeTableHandle<any>;
+  allergies: RealtimeTableHandle<any>;
+  interactions: RealtimeTableHandle<any>;
 
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.prescriptions = this.realtime.watch('prescriptions', (q) => q.order('created_at', { ascending: false }));
     this.inventory = this.realtime.watch('inventory_items', (q) => q.order('name'));
     this.doctors = this.realtime.watch<Doctor>('doctors', (q) => q.eq('active', true).order('full_name'));
+    this.patients = this.realtime.watch('patients');
+    this.allergies = this.realtime.watch('patient_allergies');
+    this.interactions = this.realtime.watch('drug_interactions');
   }
 
   prescribers(): Doctor[] {
@@ -228,11 +264,6 @@ export class PharmacyComponent implements OnDestroy {
 
   priorityColor = priorityColor;
 
-  // Short, stable "Rx #" derived from the row's uuid -- the reference has a
-  // real sequential prescription number, which we don't generate; this is
-  // the closest honest equivalent using data that actually exists.
-  // Priority-sorted queue: STAT always rises to the top regardless of when
-  // it was submitted, same principle as the ED Triage Board.
   sortedPrescriptions() {
     return sortByPriorityThenTime(this.prescriptions.data());
   }
@@ -243,6 +274,71 @@ export class PharmacyComponent implements OnDestroy {
 
   nextStatus(status: string) {
     return NEXT_STATUS[status];
+  }
+
+  onPatientQueryChange(value: string) {
+    this.patientDropdownOpen = true;
+    this.form.patient = value;
+    this.form.patient_id = null; // typing invalidates any prior selection
+  }
+
+  matchingPatients() {
+    const q = this.patientQuery.trim().toLowerCase();
+    if (!q) return [];
+    return this.patients.data()
+      .filter((p: any) => p.name?.toLowerCase().includes(q) || p.mrn?.toLowerCase().includes(q))
+      .slice(0, 6);
+  }
+
+  selectPatient(p: any) {
+    this.form.patient_id = p.id;
+    this.form.patient = p.name;
+    this.form.mrn = p.mrn;
+    this.patientQuery = `${p.name} (${p.mrn})`;
+    this.patientDropdownOpen = false;
+    this.severeAcknowledged = false;
+  }
+
+  patientAllergiesFor(patientId: string) {
+    return this.allergies.data().filter((a: any) => a.patient_id === patientId);
+  }
+
+  onDrugChange() {
+    // Re-evaluating on every keystroke is handled by warnings() being
+    // called fresh in the template -- this just resets the acknowledgment
+    // so a changed prescription can't ride on an earlier acknowledgment.
+    this.severeAcknowledged = false;
+  }
+
+  // Live-computed safety warnings: known allergy cross-checks against the
+  // selected patient, plus drug-drug interaction checks across every line
+  // currently in the prescription. Never blocks silently -- severe warnings
+  // require an explicit acknowledgment checkbox before submitting, matching
+  // the "documented override" pattern real e-prescribing systems use.
+  warnings(): SafetyWarning[] {
+    const drugNames = this.form.items.map((i) => i.drug).filter((d) => d.trim());
+    const patientAllergies = this.form.patient_id ? this.patientAllergiesFor(this.form.patient_id) : [];
+    const allWarnings: SafetyWarning[] = [];
+
+    for (let i = 0; i < drugNames.length; i++) {
+      const drug = drugNames[i];
+      allWarnings.push(...checkAllergies(drug, patientAllergies));
+      const others = drugNames.filter((_, idx) => idx !== i);
+      allWarnings.push(...checkInteractions(drug, others, this.interactions.data()));
+    }
+
+    // De-duplicate interaction pairs (A+B and B+A both fire from the loop above).
+    const seen = new Set<string>();
+    return allWarnings.filter((w) => {
+      const key = w.kind + ':' + w.message;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  hasSevereWarning() {
+    return this.warnings().some((w) => w.severity === 'Severe');
   }
 
   // Matches the reference's Pharmacy KPI row (In Queue / Dispensed Today /
@@ -283,17 +379,19 @@ export class PharmacyComponent implements OnDestroy {
     this.submitting = true;
     try {
       const { error } = await this.supabaseService.client.from('prescriptions').insert({
+        patient_id: this.form.patient_id,
         patient: this.form.patient,
         mrn: this.form.mrn,
         prescriber: this.form.prescriber,
         ward: this.form.ward,
         priority: this.form.priority,
-        allergy: this.form.allergy,
         status: 'Queued',
         items: this.form.items.filter((i) => i.drug.trim() !== ''),
       });
       if (error) throw error;
       this.form = emptyForm();
+      this.patientQuery = '';
+      this.severeAcknowledged = false;
       await this.prescriptions.refresh();
     } catch (err: any) {
       this.errorMsg = err.message;
@@ -333,5 +431,8 @@ export class PharmacyComponent implements OnDestroy {
     this.prescriptions.dispose();
     this.inventory.dispose();
     this.doctors.dispose();
+    this.patients.dispose();
+    this.allergies.dispose();
+    this.interactions.dispose();
   }
 }
