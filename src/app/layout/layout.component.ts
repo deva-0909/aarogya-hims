@@ -6,7 +6,7 @@ import { filter } from 'rxjs/operators';
 import { RoleService } from '../core/role.service';
 import { SupabaseService } from '../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../core/realtime-table.service';
-import { groupedModulesForRole, roleLabel, roleTitle, routeFor, moduleByRoute, ROLES } from '../core/modules';
+import { groupedModulesForRole, roleLabel, roleTitle, routeFor, moduleByRoute, defaultRouteForRole, ROLES } from '../core/modules';
 
 interface NotificationItem {
   severity: 'critical' | 'warning';
@@ -339,6 +339,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
   selectRole(role: string) {
     this.roleService.setRole(role);
     this.roleMenuOpen = false;
+    this.router.navigateByUrl('/' + defaultRouteForRole(role));
   }
 
   roleInitials(): string {

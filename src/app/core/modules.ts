@@ -46,22 +46,23 @@ interface RoleConfig {
   label: string;
   title: string;
   mods: number[] | null; // null = all modules (superadmin / admin)
+  defaultRoute: string; // where this role lands instead of a one-size-fits-all Command Center
 }
 
 export const ROLES: Record<string, RoleConfig> = {
-  superadmin: { label: 'Super Admin', title: 'Super Administrator', mods: null },
-  admin: { label: 'Administrator', title: 'Chief Medical Officer', mods: null },
-  doctor: { label: 'Doctor', title: 'Consultant', mods: [1, 3, 4, 5, 9, 10, 23, 7, 8, 6, 12] },
-  nurse: { label: 'Nurse', title: 'Staff Nurse', mods: [4, 10, 11, 5, 3] },
-  reception: { label: 'Receptionist', title: 'Front Desk Executive', mods: [2, 3, 13, 14, 22] },
-  pharmacist: { label: 'Pharmacist', title: 'Chief Pharmacist', mods: [6, 16] },
-  pathologist: { label: 'Pathologist', title: 'Lab — Pathology', mods: [7, 20] },
-  radiologist: { label: 'Radiologist', title: 'Radiology & Imaging', mods: [8, 3, 12, 23] },
-  accountant: { label: 'Accountant', title: 'Finance & Billing', mods: [13, 14, 17, 16] },
-  hr: { label: 'HR Manager', title: 'Head — Human Resources', mods: [17, 1, 12, 21, 26] },
-  hod: { label: 'HOD — Cardiology', title: 'Head of Department', mods: [17, 4, 6, 3, 26] },
-  labtech: { label: 'Lab Technician', title: 'Laboratory Technician', mods: [7, 20, 16, 26] },
-  employee: { label: 'Employee (Self-Service)', title: 'Staff — General Ward', mods: [26] },
+  superadmin: { label: 'Super Admin', title: 'Super Administrator', mods: null, defaultRoute: 'command-center' },
+  admin: { label: 'Administrator', title: 'Chief Medical Officer', mods: null, defaultRoute: 'command-center' },
+  doctor: { label: 'Doctor', title: 'Consultant', mods: [1, 3, 4, 5, 9, 10, 23, 7, 8, 6, 12], defaultRoute: 'opd' },
+  nurse: { label: 'Nurse', title: 'Staff Nurse', mods: [4, 10, 11, 5, 3], defaultRoute: 'nursing' },
+  reception: { label: 'Receptionist', title: 'Front Desk Executive', mods: [2, 3, 13, 14, 22], defaultRoute: 'front-office' },
+  pharmacist: { label: 'Pharmacist', title: 'Chief Pharmacist', mods: [6, 16], defaultRoute: 'pharmacy' },
+  pathologist: { label: 'Pathologist', title: 'Lab — Pathology', mods: [7, 20], defaultRoute: 'laboratory' },
+  radiologist: { label: 'Radiologist', title: 'Radiology & Imaging', mods: [8, 3, 12, 23], defaultRoute: 'radiology' },
+  accountant: { label: 'Accountant', title: 'Finance & Billing', mods: [13, 14, 17, 16], defaultRoute: 'billing' },
+  hr: { label: 'HR Manager', title: 'Head — Human Resources', mods: [17, 1, 12, 21, 26], defaultRoute: 'hr' },
+  hod: { label: 'HOD — Cardiology', title: 'Head of Department', mods: [17, 4, 6, 3, 26], defaultRoute: 'ipd' },
+  labtech: { label: 'Lab Technician', title: 'Laboratory Technician', mods: [7, 20, 16, 26], defaultRoute: 'laboratory' },
+  employee: { label: 'Employee (Self-Service)', title: 'Staff — General Ward', mods: [26], defaultRoute: 'my-workspace' },
 };
 
 const MODULE_BY_ID = Object.fromEntries(MODULES.map((m) => [m.id, m]));
@@ -89,6 +90,10 @@ export function roleLabel(role: string | null): string {
 
 export function roleTitle(role: string | null): string {
   return (role && ROLES[role]?.title) ?? '';
+}
+
+export function defaultRouteForRole(role: string | null): string {
+  return (role && ROLES[role]?.defaultRoute) ?? 'command-center';
 }
 
 export function routeFor(mod: HimsModule): string {

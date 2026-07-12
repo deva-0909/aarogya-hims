@@ -29,6 +29,7 @@ import { PhysiotherapyComponent } from './pages/physiotherapy/physiotherapy.comp
 import { PrMarketingComponent } from './pages/pr-marketing/pr-marketing.component';
 import { MyWorkspaceComponent } from './pages/my-workspace/my-workspace.component';
 import { ModuleStubComponent } from './pages/module-stub/module-stub.component';
+import { defaultLandingGuard } from './core/default-landing.guard';
 
 const LIVE_PAGES: Record<string, any> = {
   'front-office': FrontOfficeComponent,
@@ -68,7 +69,7 @@ export const routes: Routes = [
     path: '',
     component: LayoutComponent,
     children: [
-      { path: '', redirectTo: 'command-center', pathMatch: 'full' },
+      { path: '', component: CommandCenterComponent, canActivate: [defaultLandingGuard] },
       ...MODULES.map((m) => {
         const path = routeFor(m);
         const component = LIVE_PAGES[path] ?? ModuleStubComponent;
