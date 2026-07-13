@@ -133,7 +133,7 @@ const emptyForm = (): VisitForm => ({
         </form>
 
         <!-- Triage Board, matching the reference's sorted-by-acuity list + summary panel -->
-        <div class="xl:col-span-3 grid gap-[18px] items-start" style="grid-template-columns:1.85fr 1fr">
+        <div class="xl:col-span-3 grid gap-[18px] items-start grid-cols-1 lg:[grid-template-columns:1.85fr_1fr]">
           <div class="bg-white border border-[#e7ecf2] rounded-[14px] p-[16px_18px]">
             <div class="flex items-center justify-between mb-3">
               <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Triage Board</h3>

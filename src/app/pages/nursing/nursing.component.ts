@@ -100,7 +100,7 @@ type VerifyStep = 'patient' | 'drug' | null;
             <span>Today's MAR</span>
             <span class="text-[11px] font-normal text-muted-1">Verified administration -- scan wristband + label</span>
           </div>
-          <table class="w-full text-sm">
+          <div class="overflow-x-auto"><table class="w-full text-sm">
             <thead>
               <tr class="text-left text-[11.5px] text-muted-1 border-b border-line-1">
                 <th class="px-4 py-2 font-medium">Patient</th>
@@ -156,7 +156,7 @@ type VerifyStep = 'patient' | 'drug' | null;
                 </tr>
               </ng-container>
             </tbody>
-          </table>
+          </table></div>
         </div>
       </div>
 

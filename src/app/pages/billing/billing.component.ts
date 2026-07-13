@@ -143,7 +143,7 @@ function shortId(id: string, prefix: string): string {
       </div>
 
       <!-- Analytics tab -->
-      <div *ngIf="activeTab === 'analytics'" class="grid gap-[18px] items-start" style="grid-template-columns:1fr 1fr">
+      <div *ngIf="activeTab === 'analytics'" class="grid gap-[18px] items-start grid-cols-1 lg:[grid-template-columns:1fr_1fr]">
         <div class="bg-white border border-[#e7ecf2] rounded-[14px] p-[16px_18px]">
           <h3 class="m-0 mb-[10px] text-[14px] font-semibold text-[#1c3a4d]">Revenue by Department</h3>
           <div *ngIf="revenueByDept().length === 0" class="text-body-2 text-sm py-2">No invoice data yet.</div>

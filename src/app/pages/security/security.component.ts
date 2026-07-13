@@ -61,7 +61,7 @@ const emptyForm = (): VisitorForm => ({ visitor_name: '', purpose: '', visiting:
           <div class="px-5 py-3 border-b border-line-1 font-semibold text-ink-2 text-sm">
             On Premises ({{ onPremises().length }})
           </div>
-          <table class="w-full text-sm">
+          <div class="overflow-x-auto"><table class="w-full text-sm">
             <thead>
               <tr class="text-left text-[11.5px] text-muted-1 border-b border-line-1">
                 <th class="px-4 py-2 font-medium">Visitor</th>
@@ -88,7 +88,7 @@ const emptyForm = (): VisitorForm => ({ visitor_name: '', purpose: '', visiting:
                 </td>
               </tr>
             </tbody>
-          </table>
+          </table></div>
         </div>
       </div>
     </div>

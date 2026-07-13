@@ -29,8 +29,15 @@ interface PatientResult {
   imports: [CommonModule, FormsModule, RouterOutlet, RouterLink, RouterLinkActive],
   template: `
     <div class="flex h-screen w-full bg-line-2 text-ink-2 text-sm overflow-hidden">
-      <!-- Sidebar -->
-      <aside class="w-[250px] flex-none bg-brand-dark flex flex-col h-full">
+      <!-- Mobile backdrop, only shown while the drawer sidebar is open below lg: -->
+      <div *ngIf="sidebarOpen" (click)="sidebarOpen = false" class="fixed inset-0 bg-black/40 z-30 lg:hidden"></div>
+
+      <!-- Sidebar: static and always visible at lg: and up; an off-canvas
+           drawer below that, toggled by the hamburger button in the header. -->
+      <aside
+        class="w-[250px] flex-none bg-brand-dark flex flex-col h-full fixed lg:static inset-y-0 left-0 z-40 transition-transform duration-200 lg:translate-x-0"
+        [class.-translate-x-full]="!sidebarOpen"
+      >
         <div class="px-[18px] pt-[17px] pb-[14px] flex items-center gap-[11px] border-b border-white/[.07]">
           <div class="w-[34px] h-[34px] rounded-[9px] bg-gradient-to-br from-brand to-[#36c3b4] flex items-center justify-center flex-none">
             <i class="ph ph-pulse text-white text-xl"></i>
@@ -51,6 +58,7 @@ interface PatientResult {
               [routerLink]="['/', routeFor(item)]"
               routerLinkActive="border-brand bg-white/[.06] text-white font-medium"
               [routerLinkActiveOptions]="{ exact: false }"
+              (click)="sidebarOpen = false"
               class="flex items-center gap-[11px] mx-[10px] my-[1px] px-3 py-2 rounded-[9px] cursor-pointer text-[13px] border-l-[3px] border-transparent text-[#a9bccb] hover:bg-white/[.06]"
             >
               <i class="ph {{ item.icon }} text-[17px] flex-none"></i>
@@ -70,7 +78,10 @@ interface PatientResult {
       <!-- Main column -->
       <div class="flex-1 flex flex-col h-full min-w-0">
         <header class="h-[60px] flex-none bg-white border-b border-[#e2e8ee] flex items-center gap-4 px-[22px] relative z-30">
-          <div class="text-[12.5px] text-[#6b8196] font-medium flex-none">{{ breadcrumb() }}</div>
+          <button (click)="sidebarOpen = !sidebarOpen" class="lg:hidden w-9 h-9 rounded-[9px] border border-[#e2e8ee] bg-white flex items-center justify-center flex-none hover:bg-[#f7f9fb]">
+            <i class="ph ph-list text-[18px] text-[#52677b]"></i>
+          </button>
+          <div class="text-[12.5px] text-[#6b8196] font-medium flex-none hidden sm:block">{{ breadcrumb() }}</div>
           <div class="flex-1"></div>
 
           <!-- Global patient search -->
@@ -244,6 +255,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
   routeFor = routeFor;
   roleMenuOpen = false;
   notifMenuOpen = false;
+  sidebarOpen = false;
 
   searchQuery = '';
   searchOpen = false;
@@ -317,6 +329,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
       this.roleMenuOpen = false;
       this.notifMenuOpen = false;
       this.searchOpen = false;
+      this.sidebarOpen = false;
     });
   }
 

@@ -83,7 +83,7 @@ const emptyForm = (): ItemForm => ({ name: '', category: CATEGORIES[0], stock: '
               </button>
             </div>
           </div>
-          <table class="w-full text-sm">
+          <div class="overflow-x-auto"><table class="w-full text-sm">
             <thead>
               <tr class="text-left text-[11.5px] text-muted-1 border-b border-line-1">
                 <th class="px-4 py-2 font-medium">Item</th>
@@ -112,7 +112,7 @@ const emptyForm = (): ItemForm => ({ name: '', category: CATEGORIES[0], stock: '
                 </td>
               </tr>
             </tbody>
-          </table>
+          </table></div>
         </div>
       </div>
     </div>

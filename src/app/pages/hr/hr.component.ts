@@ -30,7 +30,7 @@ const emptyForm = (): LeaveForm => ({ staff_id: '', leave_type: LEAVE_TYPES[0], 
         <!-- Staff directory -->
         <div class="xl:col-span-2 bg-white border border-line-1 rounded-card overflow-hidden">
           <div class="px-5 py-3 border-b border-line-1 font-semibold text-ink-2 text-sm">Staff Directory ({{ staff.data().length }})</div>
-          <table class="w-full text-sm">
+          <div class="overflow-x-auto"><table class="w-full text-sm">
             <thead>
               <tr class="text-left text-[11.5px] text-muted-1 border-b border-line-1">
                 <th class="px-4 py-2 font-medium">Name</th>
@@ -54,7 +54,7 @@ const emptyForm = (): LeaveForm => ({ staff_id: '', leave_type: LEAVE_TYPES[0], 
                 </td>
               </tr>
             </tbody>
-          </table>
+          </table></div>
         </div>
 
         <!-- New leave request -->
@@ -100,7 +100,7 @@ const emptyForm = (): LeaveForm => ({ staff_id: '', leave_type: LEAVE_TYPES[0], 
       <!-- Leave requests -->
       <div class="bg-white border border-line-1 rounded-card overflow-hidden">
         <div class="px-5 py-3 border-b border-line-1 font-semibold text-ink-2 text-sm">Leave Requests</div>
-        <table class="w-full text-sm">
+        <div class="overflow-x-auto"><table class="w-full text-sm">
           <thead>
             <tr class="text-left text-[11.5px] text-muted-1 border-b border-line-1">
               <th class="px-4 py-2 font-medium">Staff</th>
@@ -127,7 +127,7 @@ const emptyForm = (): LeaveForm => ({ staff_id: '', leave_type: LEAVE_TYPES[0], 
               </td>
             </tr>
           </tbody>
-        </table>
+        </table></div>
       </div>
     </div>
   `,

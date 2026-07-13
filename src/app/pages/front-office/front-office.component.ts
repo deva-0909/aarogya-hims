@@ -116,6 +116,7 @@ function fmtWait(iso: string | null | undefined): string {
               <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Registration Queue</h3>
               <span class="text-[12px] text-[#8094a6]">Live · updated just now</span>
             </div>
+            <div class="overflow-x-auto"><div style="min-width:640px">
             <div class="grid px-[18px] py-[9px] bg-[#f7f9fb] border-b border-[#eef2f6] text-[10.5px] font-semibold tracking-[.4px] text-[#7d92a4] uppercase"
               style="grid-template-columns:64px 1.5fr 86px 1.3fr 1fr 56px 122px">
               <span>Token</span><span>Patient</span><span>Type</span><span>Department</span><span>Doctor</span><span>Wait</span><span>Status</span>
@@ -137,6 +138,7 @@ function fmtWait(iso: string | null | undefined): string {
               <span class="font-mono text-[12px] text-[#6b8196]">{{ fmtWait(r.created_at) }}</span>
               <span><app-status-badge [status]="r.status"></app-status-badge></span>
             </div>
+            </div></div>
           </div>
 
           <div class="bg-white border border-line-1 rounded-card overflow-hidden">

@@ -69,7 +69,7 @@ const emptyForm = (): CampaignForm => ({ title: '', type: TYPES[0], start_date: 
 
         <div class="xl:col-span-2 bg-white border border-line-1 rounded-card overflow-hidden">
           <div class="px-5 py-3 border-b border-line-1 font-semibold text-ink-2 text-sm">Campaigns</div>
-          <table class="w-full text-sm">
+          <div class="overflow-x-auto"><table class="w-full text-sm">
             <thead>
               <tr class="text-left text-[11.5px] text-muted-1 border-b border-line-1">
                 <th class="px-4 py-2 font-medium">Campaign</th>
@@ -97,7 +97,7 @@ const emptyForm = (): CampaignForm => ({ title: '', type: TYPES[0], start_date: 
                 </td>
               </tr>
             </tbody>
-          </table>
+          </table></div>
         </div>
       </div>
     </div>

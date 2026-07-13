@@ -43,12 +43,13 @@ function fmtWait(iso: string | null | undefined): string {
       <div *ngIf="visits.loading()" class="text-body-2">Loading…</div>
 
       <!-- Live consultation queue table + queue-by-status panel, matching the reference layout exactly -->
-      <div *ngIf="!visits.loading()" class="grid gap-[18px] items-start" style="grid-template-columns:1.8fr 1fr">
+      <div *ngIf="!visits.loading()" class="grid gap-[18px] items-start grid-cols-1 lg:[grid-template-columns:1.8fr_1fr]">
         <div class="bg-white border border-[#e7ecf2] rounded-[14px] overflow-hidden">
           <div class="px-[18px] py-[14px] border-b border-[#eef2f6] flex items-center justify-between">
             <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Live Consultation Queue</h3>
             <span class="text-[11.5px] text-[#9aabbb]">{{ activeVisits().length }} in queue</span>
           </div>
+          <div class="overflow-x-auto"><div style="min-width:600px">
           <div class="grid px-[18px] py-[9px] bg-[#f7f9fb] border-b border-[#eef2f6] text-[10.5px] font-semibold tracking-[.4px] text-[#7d92a4] uppercase"
             style="grid-template-columns:74px 1.4fr 1.2fr 1fr 56px 56px 116px">
             <span>Token</span><span>Patient</span><span>Department</span><span>Doctor</span><span>In</span><span>Wait</span><span>Action</span>
@@ -75,6 +76,7 @@ function fmtWait(iso: string | null | undefined): string {
               </button>
             </span>
           </div>
+          </div></div>
         </div>
 
         <div class="bg-white border border-[#e7ecf2] rounded-[14px] p-[16px_18px]">
