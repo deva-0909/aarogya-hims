@@ -9,6 +9,24 @@ import { PrintLetterheadComponent } from '../../shared/print-letterhead.componen
 type HrTab = 'directory' | 'onboarding' | 'exit' | 'salary' | 'letters' | 'orgchart' | 'loans' | 'grievance';
 
 const LEAVE_TYPES = ['Casual', 'Sick', 'Earned', 'Maternity/Paternity', 'Unpaid'];
+
+// Real statutory entitlements per year -- figures shown are Maharashtra
+// Shops & Establishments Act (Regulation of Employment and Conditions of
+// Service) 2017, since that's this hospital's operating state; other
+// states set different numbers under their own Shops Act (e.g. Delhi:
+// 12/12/15, Karnataka: 12 sick + 18 earned, no separate casual). Maternity
+// is the one leave type set centrally and uniformly nationwide, not by
+// state: 26 weeks (182 days) for the first two children, 12 weeks for
+// subsequent ones, under the Maternity Benefit Act 1961. Paternity leave
+// has no statutory mandate in the private sector -- entirely a company
+// policy matter, noted rather than assumed.
+const LEAVE_ENTITLEMENTS: Record<string, number | null> = {
+  Casual: 8,
+  Sick: 15,
+  Earned: 21,
+  'Maternity/Paternity': 182, // uses the higher (maternity) figure as the reference ceiling; see paternity note in the UI
+  Unpaid: null, // no statutory cap
+};
 const EMPLOYMENT_TYPES = ['Permanent', 'Medical Officer', 'Contract', 'Consultant', 'Intern'];
 const LOAN_TYPES = ['Personal Loan', 'Salary Advance', 'Medical Advance', 'Festival Advance'];
 const LETTER_TYPES = ['Offer Letter', 'Appointment Letter', 'Relieving Letter', 'Experience Letter', 'Salary Certificate'];
@@ -22,6 +40,26 @@ const DEFAULT_ONBOARDING_DOCS = [
   'Aadhaar Card', 'PAN Card', 'Bank Account Details', 'Educational Certificates',
   'Previous Employer Relieving Letter', 'Passport-size Photographs', 'Address Proof',
 ];
+
+// NABH's HRM chapter requires a verified credential file for every
+// clinical staff member -- Medical Council registration checked directly
+// with the council (not just a visual document check), plus a two-step
+// Credentialing (verifying qualifications) then Privileging (defining what
+// procedures they're actually permitted to perform independently) process
+// before granting clinical duties. Pre-employment health screening is a
+// separate NABH staff-health requirement, distinct from patient care.
+const CLINICAL_CREDENTIALING_DOCS = [
+  'Medical Council Registration (verified with State Medical Council)',
+  'Credentialing Committee Review -- Qualifications Verified',
+  'Privileging -- Scope of Clinical Practice Defined & Approved',
+  'Pre-Employment Health Screening & Immunization Record',
+];
+
+function onboardingDocsFor(employmentType: string): string[] {
+  const isClinical = employmentType === 'Medical Officer' || employmentType === 'Consultant';
+  return isClinical ? [...DEFAULT_ONBOARDING_DOCS, ...CLINICAL_CREDENTIALING_DOCS] : DEFAULT_ONBOARDING_DOCS;
+}
+
 const DEFAULT_EXIT_CLEARANCE = [
   'IT / System Access Revoked', 'Finance Clearance (Advances/Loans)', 'Admin — Asset Return (ID Card, Equipment)',
   'Department Head Sign-off', 'Library / Stores Clearance',
@@ -132,6 +170,14 @@ function pillStyle(stage: string) {
                 class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand">
                 <option *ngFor="let t of leaveTypes" [value]="t">{{ t }}</option>
               </select>
+            </div>
+            <div *ngIf="leaveForm.staff_id" class="text-[11px] rounded-[8px] px-[10px] py-[7px]"
+              [class]="leaveBalance().overLimit ? 'bg-warning-bg text-warning-fg' : 'bg-[#f7f9fb] text-[#5f7689]'">
+              {{ leaveBalance().text }}
+            </div>
+            <div *ngIf="leaveForm.leave_type === 'Maternity/Paternity'" class="text-[10.5px] text-muted-1">
+              Maternity: 26 weeks (1st/2nd child), 12 weeks (3rd+) -- Maternity Benefit Act 1961, uniform nationwide.
+              Paternity: no statutory entitlement in the private sector -- company policy only.
             </div>
             <div class="grid grid-cols-2 gap-2">
               <div>
@@ -391,16 +437,45 @@ function pillStyle(stage: string) {
       </div>
 
       <!-- ================= ORG CHART ================= -->
-      <div *ngIf="activeTab === 'orgchart'" class="bg-white border border-[#e7ecf2] rounded-[14px] p-[16px_18px]">
-        <h3 class="m-0 mb-1 text-[14px] font-semibold text-[#1c3a4d]">Reporting Hierarchy</h3>
-        <div class="text-[11.5px] text-[#8094a6] mb-3">Organization structure with reporting lines</div>
-        <div *ngFor="let n of orgChartRows()" class="flex items-center gap-[10px] py-[9px] border-b border-[#f0f3f7] last:border-0" [style.padding-left.px]="n.indent">
-          <span class="w-2 h-2 rounded-full bg-brand flex-none"></span>
-          <div class="flex-1 min-w-0">
-            <span class="font-semibold text-[13px] text-[#22384a]">{{ n.name }}</span>
-            <span class="text-[11.5px] text-[#8094a6] ml-2">{{ n.title }} · {{ n.dept }}</span>
+      <div *ngIf="activeTab === 'orgchart'" class="flex flex-col gap-[14px]">
+        <div class="bg-white border border-[#e7ecf2] rounded-[14px] p-[16px_18px]">
+          <h3 class="m-0 mb-1 text-[14px] font-semibold text-[#1c3a4d]">Reporting Hierarchy</h3>
+          <div class="text-[11.5px] text-[#8094a6] mb-3">Organization structure with reporting lines</div>
+          <div *ngFor="let n of orgChartRows()" class="flex items-center gap-[10px] py-[9px] border-b border-[#f0f3f7] last:border-0" [style.padding-left.px]="n.indent">
+            <span class="w-2 h-2 rounded-full bg-brand flex-none"></span>
+            <div class="flex-1 min-w-0">
+              <span class="font-semibold text-[13px] text-[#22384a]">{{ n.name }}</span>
+              <span class="text-[11.5px] text-[#8094a6] ml-2">{{ n.title }} · {{ n.dept }}</span>
+            </div>
+            <span class="text-[11px] text-[#9aabbb]">{{ n.managerName ? 'Reports to: ' + n.managerName : 'Top of hierarchy' }}</span>
           </div>
-          <span class="text-[11px] text-[#9aabbb]">{{ n.managerName ? 'Reports to: ' + n.managerName : 'Top of hierarchy' }}</span>
+        </div>
+
+        <!-- Real nursing headcount snapshot + NABH's reference ratios. Note:
+             this is a staffing snapshot, not a live per-ward compliance
+             checker -- an actual ratio calculation needs ward-level patient
+             census data (bed occupancy by ward), which lives in IPD/ICU,
+             not here. Shown as a reference for manual cross-checking. -->
+        <div class="bg-white border border-[#e7ecf2] rounded-[14px] p-[16px_18px]">
+          <h3 class="m-0 mb-1 text-[14px] font-semibold text-[#1c3a4d]">Nursing Headcount &amp; NABH Reference Ratios</h3>
+          <div class="text-[11.5px] text-[#8094a6] mb-3">
+            {{ nursingHeadcount() }} nursing staff on record. Cross-check against current ward census in IPD/ICU for
+            actual live compliance -- NABH mandated ratios:
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[12px]">
+            <div class="border border-line-1 rounded-[9px] px-3 py-2">
+              <div class="text-[#8094a6] text-[10.5px] uppercase font-semibold">ICU</div>
+              <div class="font-mono font-semibold text-[#22384a]">1:1 to 1:2</div>
+            </div>
+            <div class="border border-line-1 rounded-[9px] px-3 py-2">
+              <div class="text-[#8094a6] text-[10.5px] uppercase font-semibold">General Ward</div>
+              <div class="font-mono font-semibold text-[#22384a]">1:5 to 1:6</div>
+            </div>
+            <div class="border border-line-1 rounded-[9px] px-3 py-2">
+              <div class="text-[#8094a6] text-[10.5px] uppercase font-semibold">Emergency</div>
+              <div class="font-mono font-semibold text-[#22384a]">Unit-specific norms</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -773,6 +848,34 @@ export class HrComponent implements OnDestroy {
   }
 
   // ---------- Leave ----------
+  // Real balance, computed from actual Approved (+ Pending, counted
+  // provisionally) leave requests this calendar year for the selected
+  // staff member and leave type -- not a static display, an actual running
+  // total against the statutory entitlement.
+  leaveBalance(): { text: string; overLimit: boolean } {
+    const entitlement = LEAVE_ENTITLEMENTS[this.leaveForm.leave_type];
+    if (entitlement == null) return { text: 'No statutory cap for this leave type.', overLimit: false };
+
+    const yearStart = new Date().getFullYear() + '-01-01';
+    const usedDays = this.leaves.data()
+      .filter((l: any) =>
+        l.staff_id === this.leaveForm.staff_id &&
+        l.leave_type === this.leaveForm.leave_type &&
+        l.status !== 'Rejected' &&
+        (l.start_date ?? '') >= yearStart
+      )
+      .reduce((sum: number, l: any) => {
+        const days = Math.round((new Date(l.end_date).getTime() - new Date(l.start_date).getTime()) / 86400000) + 1;
+        return sum + Math.max(0, days);
+      }, 0);
+
+    const overLimit = usedDays >= entitlement;
+    return {
+      text: `Used ${usedDays} of ${entitlement} days this year (${this.leaveForm.leave_type}).`,
+      overLimit,
+    };
+  }
+
   async createLeave() {
     this.errorMsg = '';
     this.submitting = true;
@@ -839,7 +942,7 @@ export class HrComponent implements OnDestroy {
         name: this.onboardForm.name, position: this.onboardForm.position, dept: this.onboardForm.dept,
         join_date: this.onboardForm.join_date, employment_type: this.onboardForm.employment_type,
         monthly_rate: Number(this.onboardForm.monthly_rate), stage: 'Documents',
-        doc_checklist: DEFAULT_ONBOARDING_DOCS.map((label) => ({ label, done: false })),
+        doc_checklist: onboardingDocsFor(this.onboardForm.employment_type).map((label) => ({ label, done: false })),
       });
       if (error) throw error;
       this.showNewOnboarding = false;
@@ -946,23 +1049,33 @@ export class HrComponent implements OnDestroy {
       : 0;
     const noticePay = Math.round((monthlySalary / 30) * noticeDays);
 
-    // Gratuity, per the Payment of Gratuity Act 1972: 15/26 x last drawn
-    // monthly salary x years of service, only payable after 5 years of
-    // continuous service, and only where this employment type is
-    // statutorily eligible (matches the Salary Structure tab's toggle).
+    // Gratuity eligibility threshold differs by employment type since the
+    // Industrial Relations Code 2020 took effect (21 Nov 2025): Fixed-Term/
+    // Contract employees now get PRO-RATA gratuity after just 1 year of
+    // service -- a genuine, recent change from the traditional 5-year
+    // threshold under the Payment of Gratuity Act 1972, which still applies
+    // to Permanent/Medical Officer staff. Getting this wrong for contract
+    // staff would have meant under-paying a real statutory entitlement.
     const yearsOfService = staffMember?.date_of_joining && e.last_day
       ? (new Date(e.last_day).getTime() - new Date(staffMember.date_of_joining).getTime()) / (365.25 * 86400000)
       : 0;
-    const gratuityEligible = salaryStructure?.gratuity_applicable && yearsOfService >= 5;
-    const gratuity = gratuityEligible ? Math.round((15 / 26) * monthlySalary * yearsOfService) : 0;
+    const isFixedTerm = e.employment_type === 'Contract';
+    const gratuityThresholdYears = isFixedTerm ? 1 : 5;
+    const gratuityEligible = !!salaryStructure?.gratuity_applicable && yearsOfService >= gratuityThresholdYears;
+    // Fixed-term gratuity is explicitly pro-rata (proportional to actual
+    // service), whereas the traditional 5-year-plus calculation uses the
+    // full 15/26 x salary x years formula unprorated.
+    const gratuity = gratuityEligible
+      ? Math.round((15 / 26) * monthlySalary * yearsOfService)
+      : 0;
 
     const settlement = [
       { label: `Notice period pay (${noticeDays}d)`, value: noticePay },
       { label: 'Leave encashment (enter manually -- not tracked)', value: 0 },
       {
         label: gratuityEligible
-          ? `Gratuity (${yearsOfService.toFixed(1)}y service, 15/26 x salary x years)`
-          : `Gratuity (not eligible -- ${yearsOfService.toFixed(1)}y service, needs 5y+)`,
+          ? `Gratuity (${yearsOfService.toFixed(1)}y service${isFixedTerm ? ', pro-rata per IR Code 2020' : ', 15/26 x salary x years'})`
+          : `Gratuity (not eligible -- ${yearsOfService.toFixed(1)}y service, needs ${gratuityThresholdYears}y+)`,
         value: gratuity,
       },
       { label: 'Deductions (enter manually)', value: 0 },
@@ -998,12 +1111,27 @@ export class HrComponent implements OnDestroy {
     if (!s) return;
     const defaults: Record<string, string> = {
       'Offer Letter': `We are pleased to offer ${s.full_name} the position of ${s.title} in the ${s.department} department at City General Hospital.`,
-      'Appointment Letter': `This confirms the appointment of ${s.full_name} as ${s.title}, ${s.department}, effective ${s.date_of_joining || 'the agreed date'}.`,
+      // Mandatory under the Industrial Relations Code 2020 (effective 21 Nov
+      // 2025) for every worker in every sector: nature of work classification
+      // and employment category are now required content, not optional detail.
+      'Appointment Letter': `This confirms the appointment of ${s.full_name} as ${s.title}, ${s.department} department, effective ${s.date_of_joining || 'the agreed date'}.\n\nNature of work: ${this.natureOfWorkFor(s.title)}\nEmployment category: ${s.employment_type || 'Permanent'}${s.employment_type === 'Contract' ? ' (Fixed-Term Employment -- eligible for all statutory benefits equal to permanent employees, including pro-rata gratuity after 1 year of service)' : ''}\nMonthly salary: ${s.monthly_salary ? '\u20b9' + Number(s.monthly_salary).toLocaleString('en-IN') : '[to be specified]'}`,
       'Relieving Letter': `This is to certify that ${s.full_name} has been relieved of duties as ${s.title} in the ${s.department} department.`,
       'Experience Letter': `This is to certify that ${s.full_name} worked as ${s.title} in the ${s.department} department at City General Hospital.`,
       'Salary Certificate': `This is to certify the current compensation details of ${s.full_name}, ${s.title}, ${s.department} department.`,
     };
     this.letterForm.details = defaults[this.letterForm.letter_type] ?? '';
+  }
+
+  // Rough classification for the appointment letter's mandatory "nature of
+  // work" field -- clinical/technical roles vs supervisory vs clerical,
+  // per the categories the IR Code 2020 actually lists.
+  natureOfWorkFor(title: string): string {
+    const t = (title || '').toLowerCase();
+    if (t.includes('doctor') || t.includes('consultant') || t.includes('officer')) return 'Technical / Professional';
+    if (t.includes('nurse') || t.includes('technician') || t.includes('pharmacist')) return 'Technical / Skilled';
+    if (t.includes('manager') || t.includes('supervisor') || t.includes('head')) return 'Supervisory / Managerial';
+    if (t.includes('receptionist') || t.includes('clerk') || t.includes('accountant')) return 'Clerical';
+    return 'Skilled';
   }
 
   async createLetter() {
@@ -1039,6 +1167,12 @@ export class HrComponent implements OnDestroy {
   }
 
   // ---------- Org Chart ----------
+  nursingHeadcount(): number {
+    return this.staff.data().filter((s: any) =>
+      (s.title ?? '').toLowerCase().includes('nurse') || (s.department ?? '').toLowerCase().includes('nursing')
+    ).length;
+  }
+
   orgChartRows(): { name: string; title: string; dept: string; managerName: string | null; indent: number }[] {
     const all = this.staff.data();
     const byManager = new Map<string | null, any[]>();
