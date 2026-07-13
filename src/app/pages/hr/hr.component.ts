@@ -284,6 +284,10 @@ function pillStyle(stage: string) {
             <div *ngFor="let s of e.settlement" class="flex justify-between py-1.5 border-b border-[#f2f5f8] text-[12.5px] text-[#3f566a]">
               <span>{{ s.label }}</span><span class="font-mono font-semibold text-[#12303f]">₹{{ s.value | number }}</span>
             </div>
+            <div class="mt-2 text-[11px] rounded-[8px] px-[10px] py-[7px]" [class]="ffDeadline(e).overdue ? 'bg-danger-bg text-danger-fg' : 'bg-[#f7f9fb] text-[#5f7689]'">
+              <i class="ph ph-clock-countdown"></i>
+              F&amp;F must be paid within 2 working days of the last working day ({{ e.last_day }}) -- due {{ ffDeadline(e).date }} ({{ ffDeadline(e).label }})
+            </div>
           </div>
 
           <div *ngIf="e.exit_interview" class="mt-3 text-[12px] text-[#5f7689] bg-[#f7f9fb] rounded-[9px] px-[11px] py-[9px]">
@@ -402,8 +406,14 @@ function pillStyle(stage: string) {
 
       <!-- ================= LOANS ================= -->
       <div *ngIf="activeTab === 'loans'" class="flex flex-col gap-2.5">
-        <div class="flex justify-end">
-          <button (click)="showNewLoan = true" class="bg-brand hover:bg-brand-hover text-white rounded-[9px] px-4 py-2 text-[12.5px] font-semibold">+ New Loan / Advance</button>
+        <div class="flex items-start justify-between gap-3 flex-wrap">
+          <div class="text-[11.5px] text-[#8094a6] bg-[#f7f9fb] border border-line-1 rounded-[9px] px-3 py-2 max-w-[560px]">
+            <b class="text-[#5f7689]">Tax note:</b> interest-free/concessional staff loans exceeding ₹20,000 (aggregate,
+            per Rule 3(7)(i)) create a taxable perquisite for the employee -- valued as the gap between the
+            SBI lending rate and interest actually charged, added to salary and taxed via TDS. Loans for treatment
+            of specified diseases are exempt regardless of amount.
+          </div>
+          <button (click)="showNewLoan = true" class="bg-brand hover:bg-brand-hover text-white rounded-[9px] px-4 py-2 text-[12.5px] font-semibold flex-none">+ New Loan / Advance</button>
         </div>
         <div *ngIf="loans.data().length === 0" class="text-center text-body-2 text-sm py-8 bg-white border border-[#e7ecf2] rounded-[13px]">No loans or advances yet.</div>
         <div *ngFor="let l of loans.data()" class="bg-white border border-[#e7ecf2] rounded-[12px] px-[16px] py-[14px] flex items-center gap-[14px] flex-wrap">
@@ -412,6 +422,7 @@ function pillStyle(stage: string) {
               <span class="font-mono font-semibold text-[12px] text-brand">{{ shortId(l.id, 'LN') }}</span>
               <span class="font-semibold text-[#22384a]">{{ l.name }}</span>
               <span class="px-2 py-0.5 rounded-pill text-[10.5px] font-semibold bg-[#eef2f6] text-[#5f7689]">{{ l.loan_type }}</span>
+              <span *ngIf="l.amount > 20000 && l.loan_type !== 'Medical Advance'" class="px-2 py-0.5 rounded-pill text-[10.5px] font-semibold bg-warning-bg text-warning-fg">Taxable perquisite</span>
             </div>
             <div class="text-[12px] text-[#5f7689] mt-[3px]">{{ l.reason }} · {{ l.tenure_months }} mo &#64; ₹{{ l.emi | number }}/mo</div>
             <div class="text-[11px] text-[#9aabbb] mt-[2px]">Amount ₹{{ l.amount | number }} · Outstanding ₹{{ l.outstanding | number }}</div>
@@ -440,6 +451,38 @@ function pillStyle(stage: string) {
             <span class="px-[10px] py-0.5 rounded-pill text-[11px] font-semibold" [style.background]="pillStyle(g.stage).bg" [style.color]="pillStyle(g.stage).fg">{{ g.stage }}</span>
           </div>
           <div class="text-[12.5px] text-[#5f7689] mt-2">{{ g.description }}</div>
+
+          <!-- Real POSH Act statutory timeline, for Harassment/Discrimination categories --
+               Section 11(4): 90 days to complete inquiry from complaint receipt.
+               Section 13(1): 10 more days to submit report to employer.
+               Section 13(4): 60 days for employer to act on the recommendation.
+               These are hard deadlines with no extension clause -- missing them is
+               itself a ground the whole inquiry can be challenged on. -->
+          <div *ngIf="isPoshCategory(g)" class="mt-2 border border-[#f0c9c5] bg-[#fef4f4] rounded-[9px] px-[12px] py-[10px]">
+            <div class="text-[11px] font-bold tracking-[.5px] text-[#b42318] uppercase mb-1.5 flex items-center gap-1.5">
+              <i class="ph ph-gavel"></i> POSH Act Statutory Timeline (Sections 11 &amp; 13)
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11.5px]">
+              <div>
+                <div class="text-[#8094a6]">Inquiry due (90d)</div>
+                <div class="font-mono font-semibold" [class]="poshDeadline(g, 90).overdue ? 'text-danger-fg' : 'text-[#22384a]'">
+                  {{ poshDeadline(g, 90).date }} ({{ poshDeadline(g, 90).label }})
+                </div>
+              </div>
+              <div>
+                <div class="text-[#8094a6]">Report due (+10d)</div>
+                <div class="font-mono font-semibold text-[#22384a]">{{ poshDeadline(g, 100).date }}</div>
+              </div>
+              <div>
+                <div class="text-[#8094a6]">Employer action due (+60d)</div>
+                <div class="font-mono font-semibold text-[#22384a]">{{ poshDeadline(g, 160).date }}</div>
+              </div>
+            </div>
+            <div class="text-[11px] text-[#946200] mt-2">
+              Requires an Internal Committee: Presiding Officer (senior woman), 2+ internal members, 1 external member (NGO/expert), 50%+ women. No extension clause once the 90-day clock starts.
+            </div>
+          </div>
+
           <div *ngIf="g.resolution" class="mt-2 text-[12px] text-[#3f566a] bg-[#f7f9fb] rounded-[9px] px-[11px] py-[9px]"><b>Resolution:</b> {{ g.resolution }}</div>
           <div class="flex items-center justify-end gap-2 mt-[11px]">
             <button *ngIf="!g.escalated_posh && g.stage !== 'Resolved'" (click)="escalateGrievance(g)"
@@ -839,6 +882,23 @@ export class HrComponent implements OnDestroy {
   }
 
   // ---------- Exit ----------
+  // Full & Final settlement must reach the employee within 2 WORKING days
+  // of their last working day -- skips weekends rather than just adding
+  // 2 calendar days.
+  ffDeadline(e: any): { date: string; label: string; overdue: boolean } {
+    let d = new Date(e.last_day);
+    let added = 0;
+    while (added < 2) {
+      d = new Date(d.getTime() + 86400000);
+      if (d.getDay() !== 0 && d.getDay() !== 6) added++;
+    }
+    const now = new Date();
+    const daysLeft = Math.round((d.getTime() - now.getTime()) / 86400000);
+    const overdue = daysLeft < 0 && e.stage !== 'Completed';
+    const label = e.stage === 'Completed' ? 'settled' : overdue ? `${Math.abs(daysLeft)}d overdue` : `${daysLeft}d left`;
+    return { date: d.toLocaleDateString(), label, overdue };
+  }
+
   exitNextStage(stage: string) {
     const flow: Record<string, string> = { Clearance: 'Settlement', Settlement: 'Exit Interview', 'Exit Interview': 'Completed' };
     return flow[stage];
@@ -1036,6 +1096,25 @@ export class HrComponent implements OnDestroy {
   }
 
   // ---------- Grievance ----------
+  // Sexual harassment complaints must go to the Internal Committee from
+  // day one under Section 9 of the POSH Act -- not treated as a generic
+  // HR case that gets "escalated" later. Discrimination is included as a
+  // practical extension many Indian workplaces apply the same rigor to,
+  // though it isn't itself a POSH Act category.
+  isPoshCategory(g: any): boolean {
+    return g.category === 'Harassment' || g.category === 'Discrimination';
+  }
+
+  poshDeadline(g: any, daysFromComplaint: number): { date: string; label: string; overdue: boolean } {
+    const complaintDate = new Date(g.created_at);
+    const deadline = new Date(complaintDate.getTime() + daysFromComplaint * 86400000);
+    const now = new Date();
+    const daysLeft = Math.round((deadline.getTime() - now.getTime()) / 86400000);
+    const overdue = daysLeft < 0 && g.stage !== 'Resolved';
+    const label = g.stage === 'Resolved' ? 'closed' : overdue ? `${Math.abs(daysLeft)}d overdue` : `${daysLeft}d left`;
+    return { date: deadline.toLocaleDateString(), label, overdue };
+  }
+
   grievanceNextStage(stage: string) {
     const flow: Record<string, string> = { Reported: 'Under Review', 'Under Review': 'Resolved' };
     return flow[stage];
