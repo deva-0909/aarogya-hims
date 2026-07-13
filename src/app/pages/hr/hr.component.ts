@@ -7,7 +7,7 @@ import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 import { PrintLetterheadComponent } from '../../shared/print-letterhead.component';
 import { AttendanceCaptureComponent, AttendanceCapture } from '../../shared/attendance-capture.component';
 
-type HrTab = 'directory' | 'attendance' | 'onboarding' | 'exit' | 'salary' | 'letters' | 'orgchart' | 'loans' | 'grievance';
+type HrTab = 'directory' | 'attendance' | 'onboarding' | 'exit' | 'salary' | 'payroll' | 'letters' | 'orgchart' | 'loans' | 'grievance';
 
 const LEAVE_TYPES = ['Casual', 'Sick', 'Earned', 'Maternity/Paternity', 'Unpaid'];
 
@@ -632,6 +632,7 @@ function pillStyle(stage: string) {
                 <th class="px-4 py-2 font-medium">Gender</th>
                 <th class="px-4 py-2 font-medium">PF UAN</th>
                 <th class="px-4 py-2 font-medium">ESI No.</th>
+                <th class="px-4 py-2 font-medium">Bank A/C</th>
                 <th class="px-4 py-2 font-medium">Monthly CTC</th>
                 <th class="px-4 py-2 font-medium">Net Pay</th>
                 <th class="px-4 py-2 font-medium"></th>
@@ -639,7 +640,7 @@ function pillStyle(stage: string) {
             </thead>
             <tbody>
               <tr *ngIf="staff.data().length === 0">
-                <td colspan="8" class="px-4 py-6 text-center text-body-2">No staff on record yet.</td>
+                <td colspan="9" class="px-4 py-6 text-center text-body-2">No staff on record yet.</td>
               </tr>
               <tr *ngFor="let s of staff.data()" class="border-b border-line-2 last:border-0">
                 <td class="px-4 py-2">
@@ -666,6 +667,10 @@ function pillStyle(stage: string) {
                 </td>
                 <td class="px-4 py-2">
                   <input [ngModel]="s.esi_number" (ngModelChange)="updateStaffField(s, 'esi_number', $event)" placeholder="—"
+                    class="w-[110px] px-1.5 py-1 border border-line-1 rounded-[7px] text-[11px] font-mono" />
+                </td>
+                <td class="px-4 py-2">
+                  <input [ngModel]="s.bank_account_number" (ngModelChange)="updateStaffField(s, 'bank_account_number', $event)" placeholder="—"
                     class="w-[110px] px-1.5 py-1 border border-line-1 rounded-[7px] text-[11px] font-mono" />
                 </td>
                 <td class="px-4 py-2">
@@ -856,6 +861,109 @@ function pillStyle(stage: string) {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- ================= PAYROLL & COMPLIANCE ================= -->
+      <div *ngIf="activeTab === 'payroll'" class="flex flex-col gap-[14px]">
+        <!-- Payroll cycle: Run -> Validate -> Lock -->
+        <div class="bg-white border border-[#e7ecf2] rounded-[14px] p-[18px]">
+          <div class="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Payroll Cycle -- {{ currentPeriod() }}</h3>
+              <div class="text-[12px] text-[#8094a6] mt-[3px]">Run, validate and lock the monthly payroll cycle. Locking blocks further salary edits until next month.</div>
+            </div>
+            <span class="px-[12px] py-1.5 rounded-pill text-[11.5px] font-bold"
+              [style.background]="currentPayrollRun()?.status === 'Locked' ? '#fbe3e3' : currentPayrollRun()?.status === 'Validated' ? '#dff1ef' : '#eef2f6'"
+              [style.color]="currentPayrollRun()?.status === 'Locked' ? '#b42318' : currentPayrollRun()?.status === 'Validated' ? '#0b7d72' : '#5f7689'">
+              {{ currentPayrollRun()?.status ?? 'Not Run Yet' }}
+            </span>
+          </div>
+
+          <div *ngIf="currentPayrollRun() as run" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4 text-[12.5px]">
+            <div><div class="text-[#8094a6] text-[10px] uppercase font-semibold">Staff in Run</div><div class="font-mono font-semibold text-[#22384a]">{{ run.staff_count }}</div></div>
+            <div><div class="text-[#8094a6] text-[10px] uppercase font-semibold">Total Net Pay</div><div class="font-mono font-semibold text-[#22384a]">₹{{ run.total_net_pay | number }}</div></div>
+            <div><div class="text-[#8094a6] text-[10px] uppercase font-semibold">{{ run.status === 'Locked' ? 'Locked At' : run.status === 'Validated' ? 'Validated At' : 'Created' }}</div>
+              <div class="font-mono font-semibold text-[#22384a]">{{ (run.locked_at || run.validated_at || run.created_at) | date: 'short' }}</div></div>
+          </div>
+
+          <div class="flex gap-2 mt-4 flex-wrap">
+            <button (click)="runPayroll()" [disabled]="isPayrollLocked()"
+              class="bg-brand hover:bg-brand-hover text-white rounded-[9px] px-4 py-2 text-[12.5px] font-semibold disabled:opacity-50">
+              <i class="ph ph-play"></i> {{ currentPayrollRun() ? 'Re-run' : 'Run' }} Payroll
+            </button>
+            <button *ngIf="currentPayrollRun()?.status === 'Draft'" (click)="validatePayroll()"
+              class="border border-line-1 bg-white hover:bg-line-2 rounded-[9px] px-4 py-2 text-[12.5px] font-semibold text-body-1">
+              <i class="ph ph-check-circle"></i> Validate
+            </button>
+            <button *ngIf="currentPayrollRun()?.status === 'Validated'" (click)="lockPayroll()"
+              class="bg-danger-fg hover:opacity-90 text-white rounded-[9px] px-4 py-2 text-[12.5px] font-semibold">
+              <i class="ph ph-lock-key"></i> Lock Payroll
+            </button>
+          </div>
+        </div>
+
+        <!-- AI-style Pre-Payroll Anomaly Detection, matching the reference's
+             pattern but computed from real data -- every anomaly type below
+             is a genuinely checkable condition, not a fictional example. -->
+        <div class="bg-white border border-[#e7ecf2] rounded-[14px] p-[18px]">
+          <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+            <div>
+              <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Pre-Payroll Anomaly Detection</h3>
+              <div class="text-[12px] text-[#8094a6] mt-[3px]">Scanned {{ staff.data().length }} staff records.</div>
+            </div>
+            <span class="px-[11px] py-1 rounded-pill text-[11px] font-bold"
+              [style.background]="computeAnomalies().length > 0 ? '#fdeceb' : '#e3f5ec'"
+              [style.color]="computeAnomalies().length > 0 ? '#c5362c' : '#1f8a5b'">
+              {{ computeAnomalies().length }} open
+            </span>
+          </div>
+          <div *ngIf="computeAnomalies().length === 0" class="text-center text-body-2 text-sm py-6">No anomalies flagged.</div>
+          <div *ngFor="let a of computeAnomalies()" class="flex items-start gap-3 py-3 border-b border-[#f1f4f8] last:border-0">
+            <span class="px-[9px] py-0.5 rounded-pill text-[10px] font-bold flex-none"
+              [style.background]="a.cat === 'danger' ? '#fbe3e3' : a.cat === 'warn' ? '#fdf0d8' : '#e4edfb'"
+              [style.color]="a.cat === 'danger' ? '#b42318' : a.cat === 'warn' ? '#946200' : '#2257a3'">
+              {{ a.severity }}
+            </span>
+            <div class="flex-1 min-w-0">
+              <div class="text-[13px] font-semibold text-[#22384a]">{{ a.title }}</div>
+              <div class="text-[12px] text-[#5f7689] mt-[2px]">{{ a.detail }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Compliance Calendar -->
+        <div class="bg-white border border-[#e7ecf2] rounded-[14px] overflow-hidden">
+          <div class="px-[18px] py-[14px] border-b border-[#eef2f6]">
+            <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Compliance Calendar -- {{ currentPeriod() }}</h3>
+            <div class="text-[12px] text-[#8094a6] mt-[3px]">Statutory filing deadlines for the current period.</div>
+          </div>
+          <div class="overflow-x-auto"><table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-[11.5px] text-muted-1 border-b border-line-1">
+                <th class="px-4 py-2 font-medium">Filing</th>
+                <th class="px-4 py-2 font-medium">Due Date</th>
+                <th class="px-4 py-2 font-medium">Status</th>
+                <th class="px-4 py-2 font-medium"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let item of complianceCalendar()" class="border-b border-line-2 last:border-0">
+                <td class="px-4 py-2 font-medium text-ink-2">{{ item.filing_type }}</td>
+                <td class="px-4 py-2 font-mono text-[12.5px] text-body-1">{{ item.due_date }}</td>
+                <td class="px-4 py-2">
+                  <span class="px-2 py-0.5 rounded-pill text-[11px] font-semibold"
+                    [style.background]="item.status === 'Filed' ? '#dff1ef' : item.status === 'Overdue' ? '#fbe3e3' : '#fdf0d8'"
+                    [style.color]="item.status === 'Filed' ? '#0b7d72' : item.status === 'Overdue' ? '#b42318' : '#946200'">
+                    {{ item.status }}
+                  </span>
+                </td>
+                <td class="px-4 py-2 text-right">
+                  <button *ngIf="item.status !== 'Filed'" (click)="markFiled(item)" class="text-[12px] font-semibold text-brand hover:underline">Mark Filed</button>
+                </td>
+              </tr>
+            </tbody>
+          </table></div>
         </div>
       </div>
 
@@ -1230,6 +1338,7 @@ export class HrComponent implements OnDestroy {
     { key: 'onboarding', label: 'Onboarding', icon: 'ph-user-plus' },
     { key: 'exit', label: 'Exit', icon: 'ph-user-minus' },
     { key: 'salary', label: 'Salary Structure', icon: 'ph-currency-circle-dollar' },
+    { key: 'payroll', label: 'Payroll & Compliance', icon: 'ph-lock-key' },
     { key: 'letters', label: 'Letters', icon: 'ph-envelope' },
     { key: 'orgchart', label: 'Org Chart', icon: 'ph-sitemap' },
     { key: 'loans', label: 'Loans', icon: 'ph-hand-coins' },
@@ -1265,6 +1374,9 @@ export class HrComponent implements OnDestroy {
   grievances: RealtimeTableHandle<any>;
   attendance: RealtimeTableHandle<any>;
   statutoryRegistrations: RealtimeTableHandle<any>;
+  payrollRuns: RealtimeTableHandle<any>;
+  complianceFilings: RealtimeTableHandle<any>;
+  salaryHistory: RealtimeTableHandle<any>;
 
   attendanceStaffId = '';
   capturingMode: 'in' | 'out' | null = null;
@@ -1276,6 +1388,9 @@ export class HrComponent implements OnDestroy {
     this.exits = this.realtime.watch('hr_exits', (q) => q.order('created_at', { ascending: false }));
     this.attendance = this.realtime.watch('hr_attendance', (q) => q.order('attendance_date', { ascending: false }));
     this.statutoryRegistrations = this.realtime.watch('hr_statutory_registrations');
+    this.payrollRuns = this.realtime.watch('hr_payroll_runs', (q) => q.order('period', { ascending: false }));
+    this.complianceFilings = this.realtime.watch('hr_compliance_filings', (q) => q.order('due_date'));
+    this.salaryHistory = this.realtime.watch('hr_salary_history', (q) => q.order('changed_at', { ascending: false }));
     this.salaryStructures = this.realtime.watch('hr_salary_structure', (q) => q.order('employment_type'));
     this.letters = this.realtime.watch('hr_letters', (q) => q.order('created_at', { ascending: false }));
     this.loans = this.realtime.watch('hr_loans', (q) => q.order('created_at', { ascending: false }));
@@ -1621,6 +1736,168 @@ export class HrComponent implements OnDestroy {
     return { filled, total: fields.length, pct: Math.round((filled / fields.length) * 100) };
   }
 
+  // ================= PAYROLL CYCLE (Run -> Validate -> Lock) =================
+  currentPeriod(): string {
+    return new Date().toISOString().slice(0, 7);
+  }
+
+  currentPayrollRun(): any {
+    return this.payrollRuns.data().find((r: any) => r.period === this.currentPeriod()) ?? null;
+  }
+
+  isPayrollLocked(): boolean {
+    return this.currentPayrollRun()?.status === 'Locked';
+  }
+
+  async runPayroll() {
+    const period = this.currentPeriod();
+    const staffWithSalary = this.staff.data().filter((s: any) => s.monthly_salary != null);
+    let totalNet = 0;
+    for (const s of staffWithSalary) totalNet += this.netPayFor(s);
+
+    const existing = this.currentPayrollRun();
+    const client = this.supabaseService.client;
+    if (existing) {
+      await client.from('hr_payroll_runs').update({ staff_count: staffWithSalary.length, total_net_pay: totalNet, status: 'Draft' }).eq('id', existing.id);
+    } else {
+      await client.from('hr_payroll_runs').insert({ period, status: 'Draft', staff_count: staffWithSalary.length, total_net_pay: totalNet });
+    }
+    await this.payrollRuns.refresh();
+  }
+
+  async validatePayroll() {
+    const run = this.currentPayrollRun();
+    if (!run) return;
+    await this.supabaseService.client.from('hr_payroll_runs').update({ status: 'Validated', validated_at: new Date().toISOString() }).eq('id', run.id);
+    await this.payrollRuns.refresh();
+  }
+
+  async lockPayroll() {
+    const run = this.currentPayrollRun();
+    if (!run) return;
+    if (!confirm('Lock payroll for this period? Salary edits will be blocked until the next monthly cycle.')) return;
+    await this.supabaseService.client.from('hr_payroll_runs').update({ status: 'Locked', locked_at: new Date().toISOString() }).eq('id', run.id);
+    await this.payrollRuns.refresh();
+  }
+
+  // ================= ANOMALY DETECTION =================
+  // Real checks against real data -- not the reference's fictional
+  // example employees. Each mirrors a documented real pattern: unexplained
+  // salary jumps, duplicate bank accounts, missing attendance, and
+  // new-joiner outliers.
+  computeAnomalies(): { severity: 'HIGH' | 'MED' | 'LOW'; cat: 'danger' | 'warn' | 'info'; title: string; detail: string }[] {
+    const anomalies: { severity: 'HIGH' | 'MED' | 'LOW'; cat: 'danger' | 'warn' | 'info'; title: string; detail: string }[] = [];
+    const staffList = this.staff.data();
+
+    // 1. Salary spike >20% vs the most recent recorded change
+    for (const s of staffList) {
+      const latest = this.salaryHistory.data().find((h: any) => h.staff_id === s.id);
+      if (latest && Number(latest.old_salary) > 0) {
+        const pctChange = ((Number(latest.new_salary) - Number(latest.old_salary)) / Number(latest.old_salary)) * 100;
+        if (pctChange > 20) {
+          anomalies.push({
+            severity: 'HIGH', cat: 'danger',
+            title: 'Salary spike without increment record',
+            detail: `${s.full_name} (₹${Number(latest.old_salary).toLocaleString('en-IN')} → ₹${Number(latest.new_salary).toLocaleString('en-IN')}, +${pctChange.toFixed(0)}%) -- no approved increment record tracked for this change.`,
+          });
+        }
+      }
+    }
+
+    // 2. Duplicate bank account across active staff
+    const acctMap = new Map<string, string[]>();
+    for (const s of staffList) {
+      if (s.bank_account_number) {
+        const list = acctMap.get(s.bank_account_number) ?? [];
+        list.push(s.full_name);
+        acctMap.set(s.bank_account_number, list);
+      }
+    }
+    for (const [acct, names] of acctMap) {
+      if (names.length > 1) {
+        anomalies.push({
+          severity: 'HIGH', cat: 'danger',
+          title: 'Duplicate bank account',
+          detail: `${names.join(' / ')} are mapped to the same account no. ••••${acct.slice(-4)} -- possible data-entry error.`,
+        });
+      }
+    }
+
+    // 3. Zero present days this month, no leave marked
+    const monthStart = this.currentPeriod();
+    for (const s of staffList) {
+      if (s.monthly_salary == null) continue;
+      const presentThisMonth = this.attendance.data().filter((a: any) => a.staff_id === s.id && (a.attendance_date ?? '').startsWith(monthStart)).length;
+      const leaveThisMonth = this.leaves.data().filter((l: any) => l.staff_id === s.id && l.status !== 'Rejected' && (l.start_date ?? '').startsWith(monthStart)).length;
+      if (presentThisMonth === 0 && leaveThisMonth === 0) {
+        anomalies.push({
+          severity: 'MED', cat: 'warn',
+          title: 'Zero present days, no leave',
+          detail: `${s.full_name} shows 0 days present this month with no leave marked -- likely missing attendance data.`,
+        });
+      }
+    }
+
+    // 4. New joiner (within 60 days) salary >30% above peer average for their type
+    const now = Date.now();
+    for (const s of staffList) {
+      if (!s.date_of_joining || s.monthly_salary == null) continue;
+      const daysSinceJoining = (now - new Date(s.date_of_joining).getTime()) / 86400000;
+      if (daysSinceJoining > 60) continue;
+      const peers = staffList.filter((p: any) => p.employment_type === s.employment_type && p.monthly_salary != null && p.id !== s.id);
+      if (peers.length === 0) continue;
+      const avg = peers.reduce((sum: number, p: any) => sum + Number(p.monthly_salary), 0) / peers.length;
+      if (avg <= 0) continue;
+      const pctAbove = ((Number(s.monthly_salary) - avg) / avg) * 100;
+      if (pctAbove > 30) {
+        anomalies.push({
+          severity: 'LOW', cat: 'info',
+          title: 'New joiner above peer average',
+          detail: `${s.full_name} (joined ${Math.round(daysSinceJoining)}d ago) is ${pctAbove.toFixed(0)}% above the average salary for ${s.employment_type}.`,
+        });
+      }
+    }
+
+    return anomalies;
+  }
+
+  // ================= COMPLIANCE CALENDAR =================
+  // Real statutory deadlines for the current period -- PF ECR/ESIC/PT all
+  // due the 15th, TDS deposit due the 7th of the FOLLOWING month (matches
+  // the actual TDS deposit rule researched earlier).
+  complianceCalendar(): { filing_type: string; period: string; due_date: string; status: string; existing: any }[] {
+    const now = new Date();
+    const period = this.currentPeriod();
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const nextPeriod = nextMonth.toISOString().slice(0, 7);
+
+    const deadlines = [
+      { filing_type: 'PF ECR Challan', due_date: `${period}-15`, period },
+      { filing_type: 'ESIC Challan', due_date: `${period}-15`, period },
+      { filing_type: 'PT Return', due_date: `${period}-15`, period },
+      { filing_type: 'TDS Deposit', due_date: `${nextPeriod}-07`, period },
+    ];
+
+    return deadlines.map((d) => {
+      const existing = this.complianceFilings.data().find((f: any) => f.period === d.period && f.filing_type === d.filing_type);
+      const isOverdue = new Date(d.due_date) < now && existing?.status !== 'Filed';
+      const status = existing?.status === 'Filed' ? 'Filed' : isOverdue ? 'Overdue' : 'Pending';
+      return { ...d, status, existing };
+    });
+  }
+
+  async markFiled(item: any) {
+    const client = this.supabaseService.client;
+    if (item.existing) {
+      await client.from('hr_compliance_filings').update({ status: 'Filed', filed_at: new Date().toISOString() }).eq('id', item.existing.id);
+    } else {
+      await client.from('hr_compliance_filings').insert({
+        period: item.period, filing_type: item.filing_type, due_date: item.due_date, status: 'Filed', filed_at: new Date().toISOString(),
+      });
+    }
+    await this.complianceFilings.refresh();
+  }
+
   async updateStaffField(s: any, field: string, value: string) {
     const { error } = await this.supabaseService.client.from('staff_directory').update({ [field]: value || null }).eq('id', s.id);
     if (error) alert(error.message);
@@ -1672,8 +1949,21 @@ export class HrComponent implements OnDestroy {
   }
 
   async updateStaffSalary(s: any, value: string) {
+    if (this.isPayrollLocked()) {
+      alert(`Payroll for ${this.currentPeriod()} is locked. Salary edits are blocked until next month's cycle begins.`);
+      return;
+    }
     const salary = value === '' || value == null ? null : Number(value);
-    const { error } = await this.supabaseService.client.from('staff_directory').update({ monthly_salary: salary }).eq('id', s.id);
+    const client = this.supabaseService.client;
+
+    // Log the change for anomaly detection -- only when there was a prior
+    // real value (not the initial salary-setting for a new hire, which
+    // isn't a "change" worth flagging).
+    if (s.monthly_salary != null && salary != null && salary !== Number(s.monthly_salary)) {
+      await client.from('hr_salary_history').insert({ staff_id: s.id, old_salary: s.monthly_salary, new_salary: salary });
+    }
+
+    const { error } = await client.from('staff_directory').update({ monthly_salary: salary }).eq('id', s.id);
     if (error) alert(error.message);
     await this.staff.refresh();
   }
@@ -2059,5 +2349,8 @@ export class HrComponent implements OnDestroy {
     this.grievances.dispose();
     this.attendance.dispose();
     this.statutoryRegistrations.dispose();
+    this.payrollRuns.dispose();
+    this.complianceFilings.dispose();
+    this.salaryHistory.dispose();
   }
 }
