@@ -545,6 +545,59 @@ function pillStyle(stage: string) {
       <div *ngIf="activeTab === 'salary'" class="flex flex-col gap-[14px]">
         <app-kpi-row [items]="salaryOverviewKpis()"></app-kpi-row>
 
+        <!-- Individual employee salary -- the type-level master below sets
+             POLICY (what % is Basic, what statutory rules apply), but says
+             nothing about what any specific person actually earns. This is
+             that missing per-employee view: every staff member, their
+             actual monthly salary, editable inline. -->
+        <div class="bg-white border border-[#e7ecf2] rounded-[14px] overflow-hidden">
+          <div class="px-[18px] py-[14px] border-b border-[#eef2f6]">
+            <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Individual Employee Salary</h3>
+            <div class="text-[12px] text-[#8094a6] mt-[3px]">
+              Actual monthly CTC per person -- the type-level structure below sets policy, this is what each
+              employee actually earns. Click any salary to edit it.
+            </div>
+          </div>
+          <div class="overflow-x-auto"><table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-[11.5px] text-muted-1 border-b border-line-1">
+                <th class="px-4 py-2 font-medium">Name</th>
+                <th class="px-4 py-2 font-medium">Role / Dept</th>
+                <th class="px-4 py-2 font-medium">Employment Type</th>
+                <th class="px-4 py-2 font-medium">Monthly Salary</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngIf="staff.data().length === 0">
+                <td colspan="4" class="px-4 py-6 text-center text-body-2">No staff on record yet.</td>
+              </tr>
+              <tr *ngFor="let s of staff.data()" class="border-b border-line-2 last:border-0">
+                <td class="px-4 py-2 font-medium text-ink-2">{{ s.full_name }}</td>
+                <td class="px-4 py-2 text-body-1">
+                  <div>{{ s.title }}</div>
+                  <div class="text-[11px] text-muted-1">{{ s.department }}</div>
+                </td>
+                <td class="px-4 py-2">
+                  <span class="px-2 py-0.5 rounded-pill text-[11px] font-semibold"
+                    [style.background]="employmentTypeTint(s.employment_type).bg" [style.color]="employmentTypeTint(s.employment_type).fg">
+                    {{ s.employment_type || '—' }}
+                  </span>
+                </td>
+                <td class="px-4 py-2">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-body-1">₹</span>
+                    <input type="number" min="0" [ngModel]="s.monthly_salary" (ngModelChange)="updateStaffSalary(s, $event)"
+                      placeholder="Not set"
+                      class="w-[110px] px-2 py-1 border rounded-[7px] text-[12.5px] font-mono font-semibold"
+                      [class]="s.monthly_salary == null ? 'border-warning-fg bg-warning-bg' : 'border-line-1'" />
+                    <span *ngIf="s.monthly_salary == null" class="text-[10.5px] text-warning-fg">not set</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table></div>
+        </div>
+
         <div class="bg-white border border-[#e7ecf2] rounded-[14px] overflow-hidden">
           <div class="px-[18px] py-[14px] border-b border-[#eef2f6]">
             <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Salary Structure Master — by Employment Type</h3>
@@ -1424,6 +1477,13 @@ export class HrComponent implements OnDestroy {
       Intern: 'ph-graduation-cap',
     };
     return map[type] ?? 'ph-user';
+  }
+
+  async updateStaffSalary(s: any, value: string) {
+    const salary = value === '' || value == null ? null : Number(value);
+    const { error } = await this.supabaseService.client.from('staff_directory').update({ monthly_salary: salary }).eq('id', s.id);
+    if (error) alert(error.message);
+    await this.staff.refresh();
   }
 
   staffCountFor(employmentType: string): number {
