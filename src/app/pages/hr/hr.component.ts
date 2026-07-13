@@ -84,6 +84,49 @@ const STAGE_COLOR: Record<string, { bg: string; fg: string }> = {
   Induction: { bg: '#ece8fb', fg: '#5536c9' },
 };
 
+// Real PF/ESI monthly contribution formulas (rates stable for years,
+// current through 2026):
+//   PF: employee 12% of (Basic+DA), employer 12% split into EPS 8.33%
+//       (capped at the Rs 15,000 wage ceiling -> max Rs 1,250/month) +
+//       EPF 3.67% (the balance) + employer EDLI 0.5% (same Rs 15,000 cap)
+//       + admin charge 0.5% (min Rs 500/month).
+//   ESI: employee 0.75%, employer 3.25% of GROSS wages -- only when gross
+//       is <= Rs 21,000/month (Rs 25,000 for persons with disabilities).
+// Basic is derived from the Salary Structure row's basic_pct of the
+// employee's monthly CTC, not a separately tracked figure.
+const PF_WAGE_CEILING = 15000;
+const ESI_WAGE_CEILING = 21000;
+
+interface StatutoryBreakdown {
+  basic: number;
+  employeePF: number;
+  employerEPS: number;
+  employerEPF: number;
+  employerEDLI: number;
+  adminCharge: number;
+  esiApplicable: boolean;
+  employeeESI: number;
+  employerESI: number;
+}
+
+function computeStatutoryDeductions(ctc: number, structure: any): StatutoryBreakdown {
+  const basic = ctc * (Number(structure?.basic_pct ?? 0) / 100);
+  const pfApplicable = !!structure?.pf_applicable;
+  const pfWageBase = Math.min(basic, PF_WAGE_CEILING);
+
+  const employeePF = pfApplicable ? Math.round(basic * 0.12) : 0;
+  const employerEPS = pfApplicable ? Math.round(pfWageBase * 0.0833) : 0;
+  const employerEPF = pfApplicable ? Math.round(basic * 0.12) - employerEPS : 0;
+  const employerEDLI = pfApplicable ? Math.round(pfWageBase * 0.005) : 0;
+  const adminCharge = pfApplicable ? 500 : 0; // per-establishment minimum, not per-employee in reality, but shown per employee for illustration
+
+  const esiApplicable = !!structure?.esi_applicable && ctc <= ESI_WAGE_CEILING;
+  const employeeESI = esiApplicable ? Math.round(ctc * 0.0075) : 0;
+  const employerESI = esiApplicable ? Math.round(ctc * 0.0325) : 0;
+
+  return { basic, employeePF, employerEPS, employerEPF, employerEDLI, adminCharge, esiApplicable, employeeESI, employerESI };
+}
+
 function shortId(id: string, prefix: string): string {
   return prefix + '-' + id.slice(0, 4).toUpperCase();
 }
@@ -265,6 +308,17 @@ function pillStyle(stage: string) {
             </button>
           </div>
 
+          <!-- Credential expiry tracking, only relevant for clinical roles --
+               NABH's HRM chapter specifically requires registration renewal
+               dates with expiry alerts, not just a one-time verification. -->
+          <div *ngIf="o.employment_type === 'Medical Officer' || o.employment_type === 'Consultant'" class="mt-3 flex items-center gap-3 flex-wrap">
+            <label class="text-[11px] font-medium text-body-1">Medical Council registration expiry:</label>
+            <input type="date" [ngModel]="o.credential_expiry" (ngModelChange)="updateCredentialExpiry(o, $event)"
+              class="border border-line-1 rounded-[7px] px-2 py-1 text-[11.5px]" />
+            <span *ngIf="credentialAlert(o.credential_expiry) as alert" class="px-2 py-0.5 rounded-pill text-[10.5px] font-semibold"
+              [style.background]="alert.bg" [style.color]="alert.fg">{{ alert.text }}</span>
+          </div>
+
           <div class="text-[10.5px] font-bold tracking-[.6px] text-brand uppercase pt-[14px] pb-[6px]">IT, Access &amp; Induction</div>
           <div class="flex gap-2 flex-wrap">
             <button type="button" (click)="toggleFlag(o, 'it_access')" class="flex items-center gap-2 bg-white border border-line-1 rounded-[9px] px-[12px] py-2 hover:border-brand">
@@ -361,6 +415,11 @@ function pillStyle(stage: string) {
         <div class="px-[18px] py-[14px] border-b border-[#eef2f6]">
           <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Salary Structure Master — by Employment Type</h3>
           <div class="text-[12px] text-[#8094a6] mt-[3px]">Pay components + statutory applicability (PF / ESI / PT / Gratuity / TDS), per Indian payroll compliance norms.</div>
+          <div class="text-[11px] text-[#5f7689] bg-[#f7f9fb] rounded-[8px] px-[10px] py-[7px] mt-[9px]">
+            <b>Statutory Bonus (Payment of Bonus Act 1965):</b> minimum 8.33% of Basic+DA (max 20%) is mandatory for
+            employees earning up to ₹21,000/month, payable within 8 months of financial year end -- not yet
+            reflected in payroll runs below since bonus is an annual computation, not a monthly structure component.
+          </div>
         </div>
         <div *ngFor="let r of salaryStructures.data()" class="px-[18px] py-[14px] border-b border-[#f1f4f8] last:border-0">
           <div class="flex items-center justify-between gap-2 flex-wrap">
@@ -406,6 +465,36 @@ function pillStyle(stage: string) {
               <label class="block text-[10px] font-semibold text-muted-1 uppercase">Conveyance ₹</label>
               <input type="number" min="0" [ngModel]="r.conveyance" (ngModelChange)="updateSalaryField(r, 'conveyance', $event)"
                 class="w-[80px] mt-1 px-2 py-1 border border-line-1 rounded-[7px] text-[12px] font-mono font-semibold" />
+            </div>
+          </div>
+
+          <!-- Real PF/ESI monthly contribution, computed from actual staff
+               salary on record for this employment type -- not a static
+               formula display, an aggregate over real people. -->
+          <div class="mt-3 pt-3 border-t border-[#f1f4f8]">
+            <div *ngIf="staffWithSalaryFor(r.employment_type).length === 0" class="text-[11px] text-muted-1">
+              No staff with recorded monthly salary in this employment type yet -- add a salary via "+ New Staff" or onboarding conversion to see real PF/ESI figures here.
+            </div>
+            <div *ngIf="staffWithSalaryFor(r.employment_type).length > 0" class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11.5px]">
+              <div>
+                <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Employee PF/mo</div>
+                <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).employeePF | number }}</div>
+              </div>
+              <div>
+                <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Employer PF+EDLI/mo</div>
+                <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).employerTotal | number }}</div>
+              </div>
+              <div>
+                <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Employee ESI/mo</div>
+                <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).employeeESI | number }}</div>
+              </div>
+              <div>
+                <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Employer ESI/mo</div>
+                <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).employerESI | number }}</div>
+              </div>
+            </div>
+            <div *ngIf="staffWithSalaryFor(r.employment_type).length > 0" class="text-[10.5px] text-muted-1 mt-1.5">
+              Across {{ staffWithSalaryFor(r.employment_type).length }} staff with recorded salary. ESI wage ceiling is ₹21,000/month -- staff above this are correctly excluded.
             </div>
           </div>
         </div>
@@ -960,6 +1049,18 @@ export class HrComponent implements OnDestroy {
     await this.supabaseService.client.from('hr_onboarding').update({ doc_checklist: updated }).eq('id', o.id);
   }
 
+  async updateCredentialExpiry(o: any, value: string) {
+    await this.supabaseService.client.from('hr_onboarding').update({ credential_expiry: value || null }).eq('id', o.id);
+  }
+
+  credentialAlert(expiryDate: string | null): { text: string; bg: string; fg: string } | null {
+    if (!expiryDate) return null;
+    const daysLeft = Math.round((new Date(expiryDate).getTime() - Date.now()) / 86400000);
+    if (daysLeft < 0) return { text: `Expired ${Math.abs(daysLeft)}d ago`, bg: '#fbe3e3', fg: '#b42318' };
+    if (daysLeft <= 60) return { text: `Renewal due in ${daysLeft}d`, bg: '#fdf0d8', fg: '#946200' };
+    return { text: 'Valid', bg: '#dff1ef', fg: '#0b7d72' };
+  }
+
   async toggleFlag(o: any, field: 'it_access' | 'id_card_issued' | 'induction_done') {
     await this.supabaseService.client.from('hr_onboarding').update({ [field]: !o[field] }).eq('id', o.id);
   }
@@ -1097,6 +1198,26 @@ export class HrComponent implements OnDestroy {
   }
 
   // ---------- Salary Structure ----------
+  staffWithSalaryFor(employmentType: string) {
+    return this.staff.data().filter((s: any) => s.employment_type === employmentType && s.monthly_salary != null);
+  }
+
+  // Real aggregate across every staff member on record in this employment
+  // type with a recorded salary -- each computed individually against
+  // their own CTC (basic derived from this row's basic_pct), then summed.
+  statutoryTotals(r: any): { employeePF: number; employerTotal: number; employeeESI: number; employerESI: number } {
+    const staffList = this.staffWithSalaryFor(r.employment_type);
+    let employeePF = 0, employerTotal = 0, employeeESI = 0, employerESI = 0;
+    for (const s of staffList) {
+      const d = computeStatutoryDeductions(Number(s.monthly_salary), r);
+      employeePF += d.employeePF;
+      employerTotal += d.employerEPS + d.employerEPF + d.employerEDLI;
+      employeeESI += d.employeeESI;
+      employerESI += d.employerESI;
+    }
+    return { employeePF, employerTotal, employeeESI, employerESI };
+  }
+
   async toggleStatutory(r: any, field: string) {
     await this.supabaseService.client.from('hr_salary_structure').update({ [field]: !r[field] }).eq('id', r.id);
   }
