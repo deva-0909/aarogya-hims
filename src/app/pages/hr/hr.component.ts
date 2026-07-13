@@ -5,8 +5,9 @@ import { SupabaseService } from '../../core/supabase.service';
 import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-table.service';
 import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 import { PrintLetterheadComponent } from '../../shared/print-letterhead.component';
+import { AttendanceCaptureComponent, AttendanceCapture } from '../../shared/attendance-capture.component';
 
-type HrTab = 'directory' | 'onboarding' | 'exit' | 'salary' | 'letters' | 'orgchart' | 'loans' | 'grievance';
+type HrTab = 'directory' | 'attendance' | 'onboarding' | 'exit' | 'salary' | 'letters' | 'orgchart' | 'loans' | 'grievance';
 
 const LEAVE_TYPES = ['Casual', 'Sick', 'Earned', 'Maternity/Paternity', 'Unpaid'];
 
@@ -181,7 +182,7 @@ function pillStyle(stage: string) {
 @Component({
   selector: 'app-hr',
   standalone: true,
-  imports: [CommonModule, FormsModule, KpiRowComponent, PrintLetterheadComponent],
+  imports: [CommonModule, FormsModule, KpiRowComponent, PrintLetterheadComponent, AttendanceCaptureComponent],
   template: `
     <div>
       <app-kpi-row [items]="kpis()"></app-kpi-row>
@@ -317,6 +318,85 @@ function pillStyle(stage: string) {
               </tr>
             </tbody>
           </table></div>
+        </div>
+      </div>
+
+      <!-- ================= ATTENDANCE ================= -->
+      <div *ngIf="activeTab === 'attendance'" class="flex flex-col gap-[14px]">
+        <app-kpi-row [items]="attendanceKpis()"></app-kpi-row>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-[14px]">
+          <!-- Self check-in/out widget -->
+          <div class="bg-white border border-line-1 rounded-card p-5 h-fit">
+            <h2 class="font-semibold text-ink-2 text-sm mb-1">Mark Attendance</h2>
+            <p class="text-[11.5px] text-muted-1 mb-3">Photo + location captured at check-in and check-out, matching real hospital HRMS practice -- no biometric hardware needed, just this device's camera.</p>
+
+            <label class="block text-xs font-medium text-body-1 mb-1">I am:</label>
+            <select [(ngModel)]="attendanceStaffId" name="attendanceStaffId"
+              class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand mb-3">
+              <option value="">Select yourself</option>
+              <option *ngFor="let s of staff.data()" [value]="s.id">{{ s.full_name }} — {{ s.title }}</option>
+            </select>
+
+            <div *ngIf="attendanceStaffId">
+              <div *ngIf="todaysAttendanceFor(attendanceStaffId) as today; else notCheckedIn">
+                <div class="text-[12.5px] text-body-1 mb-2">
+                  Checked in at <b class="font-mono">{{ today.check_in_at | date: 'shortTime' }}</b>
+                  <span *ngIf="today.check_in_lat"> · <i class="ph ph-map-pin"></i> location captured</span>
+                </div>
+                <button *ngIf="!today.check_out_at" (click)="startCapture('out')"
+                  class="w-full bg-brand hover:bg-brand-hover text-white rounded-[9px] py-2.5 text-sm font-semibold">
+                  Check Out
+                </button>
+                <div *ngIf="today.check_out_at" class="text-[12.5px] text-success-fg bg-success-bg rounded-[9px] px-3 py-2 text-center">
+                  Checked out at {{ today.check_out_at | date: 'shortTime' }} -- {{ hoursWorked(today) }} hrs today
+                </div>
+              </div>
+              <ng-template #notCheckedIn>
+                <button (click)="startCapture('in')"
+                  class="w-full bg-brand hover:bg-brand-hover text-white rounded-[9px] py-2.5 text-sm font-semibold">
+                  Check In
+                </button>
+              </ng-template>
+            </div>
+          </div>
+
+          <!-- Attendance register -->
+          <div class="lg:col-span-2 bg-white border border-line-1 rounded-card overflow-hidden">
+            <div class="px-5 py-3 border-b border-line-1 font-semibold text-ink-2 text-sm">Attendance Register -- Last 14 Days</div>
+            <div class="overflow-x-auto"><table class="w-full text-sm">
+              <thead>
+                <tr class="text-left text-[11.5px] text-muted-1 border-b border-line-1">
+                  <th class="px-4 py-2 font-medium">Date</th>
+                  <th class="px-4 py-2 font-medium">Staff</th>
+                  <th class="px-4 py-2 font-medium">Check In</th>
+                  <th class="px-4 py-2 font-medium">Check Out</th>
+                  <th class="px-4 py-2 font-medium">Hours</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngIf="attendance.data().length === 0">
+                  <td colspan="5" class="px-4 py-6 text-center text-body-2">No attendance recorded yet.</td>
+                </tr>
+                <tr *ngFor="let a of recentAttendance()" class="border-b border-line-2 last:border-0">
+                  <td class="px-4 py-2 font-mono text-[12.5px] text-body-1">{{ a.attendance_date }}</td>
+                  <td class="px-4 py-2 text-ink-2 font-medium">{{ staffNameFor(a.staff_id) }}</td>
+                  <td class="px-4 py-2 font-mono text-[12px] text-body-1">{{ a.check_in_at ? (a.check_in_at | date: 'shortTime') : '—' }}</td>
+                  <td class="px-4 py-2 font-mono text-[12px] text-body-1">{{ a.check_out_at ? (a.check_out_at | date: 'shortTime') : '—' }}</td>
+                  <td class="px-4 py-2 font-mono text-[12px] text-body-1">{{ a.check_out_at ? hoursWorked(a) : '—' }}</td>
+                </tr>
+              </tbody>
+            </table></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Capture modal for check-in/out -->
+      <div *ngIf="capturingMode" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50" (click)="capturingMode = null">
+        <div (click)="$event.stopPropagation()" class="bg-white rounded-card p-5 w-full max-w-sm space-y-3">
+          <h3 class="font-semibold text-ink-2">{{ capturingMode === 'in' ? 'Check In' : 'Check Out' }}</h3>
+          <app-attendance-capture (captureReady)="onCaptured($event)"></app-attendance-capture>
+          <button type="button" (click)="capturingMode = null" class="w-full border border-line-1 rounded-[9px] py-2 text-sm font-medium text-body-1">Cancel</button>
         </div>
       </div>
 
@@ -462,94 +542,143 @@ function pillStyle(stage: string) {
       </div>
 
       <!-- ================= SALARY STRUCTURE ================= -->
-      <div *ngIf="activeTab === 'salary'" class="bg-white border border-[#e7ecf2] rounded-[14px] overflow-hidden">
-        <div class="px-[18px] py-[14px] border-b border-[#eef2f6]">
-          <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Salary Structure Master — by Employment Type</h3>
-          <div class="text-[12px] text-[#8094a6] mt-[3px]">Pay components + statutory applicability (PF / ESI / PT / Gratuity / TDS), per Indian payroll compliance norms.</div>
-          <div class="text-[11px] text-[#5f7689] bg-[#f7f9fb] rounded-[8px] px-[10px] py-[7px] mt-[9px]">
-            <b>Statutory Bonus (Payment of Bonus Act 1965):</b> minimum 8.33% of Basic+DA (max 20%) is mandatory for
-            employees earning up to ₹21,000/month, payable within 8 months of financial year end -- not yet
-            reflected in payroll runs below since bonus is an annual computation, not a monthly structure component.
-          </div>
-        </div>
-        <div *ngFor="let r of salaryStructures.data()" class="px-[18px] py-[14px] border-b border-[#f1f4f8] last:border-0">
-          <div class="flex items-center justify-between gap-2 flex-wrap">
-            <div class="font-semibold text-[14px] text-[#22384a]">{{ r.employment_type }}</div>
-          </div>
-          <div *ngIf="r.employment_type === 'Consultant'" class="mt-2 mb-1 text-[11.5px] text-warning-fg bg-warning-bg rounded-[8px] px-[11px] py-[8px] flex items-start gap-2">
-            <i class="ph ph-warning mt-0.5 flex-none"></i>
-            <span>
-              Paid as <b>Professional Fees</b>, not payroll salary. TDS deducted under Section 194J (10%), not
-              Section 192 (salary slab rates) -- must use a separate ledger/challan from employee salary.
-              Combining consultant fees with salary in the same TDS challan is a common, avoidable compliance error.
-            </span>
-          </div>
-          <div *ngIf="r.employment_type === 'Medical Officer'" class="mt-2 mb-1 text-[11.5px] text-[#5f7689] bg-[#f7f9fb] rounded-[8px] px-[11px] py-[8px]">
-            NPA (Non-Practicing Allowance) applies to salaried doctors who forgo private practice -- counted as
-            Pay for DA and retirement benefits, but excluded from the HRA calculation base.
-          </div>
-          <div class="flex items-center justify-end gap-2 flex-wrap">
-            <div class="flex gap-[6px] flex-wrap">
-              <button (click)="toggleStatutory(r, 'pf_applicable')" class="rounded-pill px-[11px] py-1 text-[10.5px] font-semibold"
-                [style.background]="r.pf_applicable ? '#dff1ef' : '#eef2f6'" [style.color]="r.pf_applicable ? '#0b7d72' : '#8094a6'">PF: {{ r.pf_applicable ? 'Yes' : 'No' }}</button>
-              <button (click)="toggleStatutory(r, 'esi_applicable')" class="rounded-pill px-[11px] py-1 text-[10.5px] font-semibold"
-                [style.background]="r.esi_applicable ? '#dff1ef' : '#eef2f6'" [style.color]="r.esi_applicable ? '#0b7d72' : '#8094a6'">ESI: {{ r.esi_applicable ? 'Yes' : 'No' }}</button>
-              <button (click)="toggleStatutory(r, 'pt_applicable')" class="rounded-pill px-[11px] py-1 text-[10.5px] font-semibold"
-                [style.background]="r.pt_applicable ? '#dff1ef' : '#eef2f6'" [style.color]="r.pt_applicable ? '#0b7d72' : '#8094a6'">PT: {{ r.pt_applicable ? 'Yes' : 'No' }}</button>
-              <button (click)="toggleStatutory(r, 'gratuity_applicable')" class="rounded-pill px-[11px] py-1 text-[10.5px] font-semibold"
-                [style.background]="r.gratuity_applicable ? '#dff1ef' : '#eef2f6'" [style.color]="r.gratuity_applicable ? '#0b7d72' : '#8094a6'">Gratuity: {{ r.gratuity_applicable ? 'Yes' : 'No' }}</button>
-              <span class="rounded-pill px-[11px] py-1 text-[10.5px] font-semibold bg-[#eef2f6] text-[#52677b]">TDS: {{ r.tds_note }}</span>
-            </div>
-          </div>
-          <div class="flex gap-4 mt-[10px] flex-wrap">
-            <div>
-              <label class="block text-[10px] font-semibold text-muted-1 uppercase">Basic %</label>
-              <input type="number" min="0" max="100" [ngModel]="r.basic_pct" (ngModelChange)="updateSalaryField(r, 'basic_pct', $event)"
-                class="w-[70px] mt-1 px-2 py-1 border border-line-1 rounded-[7px] text-[12px] font-mono font-semibold" />
-            </div>
-            <div>
-              <label class="block text-[10px] font-semibold text-muted-1 uppercase">HRA % of Basic</label>
-              <input type="number" min="0" max="100" [ngModel]="r.hra_pct" (ngModelChange)="updateSalaryField(r, 'hra_pct', $event)"
-                class="w-[70px] mt-1 px-2 py-1 border border-line-1 rounded-[7px] text-[12px] font-mono font-semibold" />
-            </div>
-            <div>
-              <label class="block text-[10px] font-semibold text-muted-1 uppercase">Conveyance ₹</label>
-              <input type="number" min="0" [ngModel]="r.conveyance" (ngModelChange)="updateSalaryField(r, 'conveyance', $event)"
-                class="w-[80px] mt-1 px-2 py-1 border border-line-1 rounded-[7px] text-[12px] font-mono font-semibold" />
+      <div *ngIf="activeTab === 'salary'" class="flex flex-col gap-[14px]">
+        <app-kpi-row [items]="salaryOverviewKpis()"></app-kpi-row>
+
+        <div class="bg-white border border-[#e7ecf2] rounded-[14px] overflow-hidden">
+          <div class="px-[18px] py-[14px] border-b border-[#eef2f6]">
+            <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Salary Structure Master — by Employment Type</h3>
+            <div class="text-[12px] text-[#8094a6] mt-[3px]">Pay components + statutory applicability, per Indian payroll compliance norms.</div>
+            <div class="flex items-start gap-2 text-[11px] text-[#5f7689] bg-[#f7f9fb] rounded-[8px] px-[10px] py-[7px] mt-[9px]">
+              <i class="ph ph-info mt-0.5 flex-none"></i>
+              <span><b>Statutory Bonus (Payment of Bonus Act 1965):</b> minimum 8.33% of Basic+DA (max 20%), mandatory for
+              employees earning up to ₹21,000/month, payable within 8 months of financial year end — an annual
+              computation, not reflected in the monthly figures below.</span>
             </div>
           </div>
 
-          <!-- Real PF/ESI monthly contribution, computed from actual staff
-               salary on record for this employment type -- not a static
-               formula display, an aggregate over real people. -->
-          <div class="mt-3 pt-3 border-t border-[#f1f4f8]">
-            <div *ngIf="staffWithSalaryFor(r.employment_type).length === 0" class="text-[11px] text-muted-1">
-              No staff with recorded monthly salary in this employment type yet -- add a salary via "+ New Staff" or onboarding conversion to see real PF/ESI figures here.
-            </div>
-            <div *ngIf="staffWithSalaryFor(r.employment_type).length > 0" class="grid grid-cols-2 sm:grid-cols-5 gap-3 text-[11.5px]">
-              <div>
-                <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Employee PF/mo</div>
-                <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).employeePF | number }}</div>
+          <div *ngFor="let r of salaryStructures.data()" class="border-b border-[#f1f4f8] last:border-0">
+            <div class="px-[18px] py-[16px]">
+              <!-- Header row: icon, type name, headcount, TDS treatment -->
+              <div class="flex items-center gap-[12px] flex-wrap">
+                <span class="w-[38px] h-[38px] rounded-[10px] flex items-center justify-center flex-none"
+                  [style.background]="employmentTypeTint(r.employment_type).bg">
+                  <i class="ph {{ employmentTypeIcon(r.employment_type) }} text-[18px]" [style.color]="employmentTypeTint(r.employment_type).fg"></i>
+                </span>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-[9px] flex-wrap">
+                    <span class="font-semibold text-[14.5px] text-[#22384a]">{{ r.employment_type }}</span>
+                    <span class="px-2 py-0.5 rounded-pill text-[10.5px] font-semibold bg-[#eef2f6] text-[#5f7689]">
+                      {{ staffCountFor(r.employment_type) }} staff
+                    </span>
+                  </div>
+                  <div class="text-[11px] text-[#9aabbb] mt-[2px]">TDS treatment: {{ r.tds_note }}</div>
+                </div>
               </div>
-              <div>
-                <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Employer PF+EDLI/mo</div>
-                <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).employerTotal | number }}</div>
+
+              <div *ngIf="r.employment_type === 'Consultant'" class="mt-3 text-[11.5px] text-warning-fg bg-warning-bg rounded-[8px] px-[11px] py-[8px] flex items-start gap-2">
+                <i class="ph ph-warning mt-0.5 flex-none"></i>
+                <span>
+                  Paid as <b>Professional Fees</b>, not payroll salary. TDS deducted under Section 194J (10%), not
+                  Section 192 (salary slab rates) — must use a separate ledger/challan from employee salary.
+                </span>
               </div>
-              <div>
-                <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Employee ESI/mo</div>
-                <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).employeeESI | number }}</div>
+              <div *ngIf="r.employment_type === 'Medical Officer'" class="mt-3 text-[11.5px] text-[#5f7689] bg-[#f7f9fb] rounded-[8px] px-[11px] py-[8px]">
+                NPA (Non-Practicing Allowance) applies to doctors who forgo private practice — counted as Pay for DA
+                and retirement benefits, but excluded from the HRA calculation base.
               </div>
-              <div>
-                <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Employer ESI/mo</div>
-                <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).employerESI | number }}</div>
+
+              <!-- Pay structure inputs + illustrative payslip breakdown, side by side -->
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-[18px] mt-[14px]">
+                <div>
+                  <div class="text-[10px] font-bold tracking-[.5px] text-[#9aabbb] uppercase mb-2">Pay Components</div>
+                  <div class="grid grid-cols-3 gap-[10px]">
+                    <div>
+                      <label class="block text-[10px] font-medium text-muted-1 mb-1">Basic %</label>
+                      <input type="number" min="0" max="100" [ngModel]="r.basic_pct" (ngModelChange)="updateSalaryField(r, 'basic_pct', $event)"
+                        class="w-full px-2 py-1.5 border border-line-1 rounded-[7px] text-[12.5px] font-mono font-semibold" />
+                    </div>
+                    <div>
+                      <label class="block text-[10px] font-medium text-muted-1 mb-1">HRA % of Basic</label>
+                      <input type="number" min="0" max="100" [ngModel]="r.hra_pct" (ngModelChange)="updateSalaryField(r, 'hra_pct', $event)"
+                        class="w-full px-2 py-1.5 border border-line-1 rounded-[7px] text-[12.5px] font-mono font-semibold" />
+                    </div>
+                    <div>
+                      <label class="block text-[10px] font-medium text-muted-1 mb-1">Conveyance ₹</label>
+                      <input type="number" min="0" [ngModel]="r.conveyance" (ngModelChange)="updateSalaryField(r, 'conveyance', $event)"
+                        class="w-full px-2 py-1.5 border border-line-1 rounded-[7px] text-[12.5px] font-mono font-semibold" />
+                    </div>
+                  </div>
+
+                  <div class="text-[10px] font-bold tracking-[.5px] text-[#9aabbb] uppercase mt-4 mb-2">Statutory Applicability</div>
+                  <div class="flex gap-[6px] flex-wrap">
+                    <button (click)="toggleStatutory(r, 'pf_applicable')" class="flex items-center gap-1.5 rounded-pill px-[11px] py-1.5 text-[10.5px] font-semibold"
+                      [style.background]="r.pf_applicable ? '#dff1ef' : '#eef2f6'" [style.color]="r.pf_applicable ? '#0b7d72' : '#8094a6'">
+                      <i class="ph {{ r.pf_applicable ? 'ph-check-circle' : 'ph-x-circle' }}"></i>PF
+                    </button>
+                    <button (click)="toggleStatutory(r, 'esi_applicable')" class="flex items-center gap-1.5 rounded-pill px-[11px] py-1.5 text-[10.5px] font-semibold"
+                      [style.background]="r.esi_applicable ? '#dff1ef' : '#eef2f6'" [style.color]="r.esi_applicable ? '#0b7d72' : '#8094a6'">
+                      <i class="ph {{ r.esi_applicable ? 'ph-check-circle' : 'ph-x-circle' }}"></i>ESI
+                    </button>
+                    <button (click)="toggleStatutory(r, 'pt_applicable')" class="flex items-center gap-1.5 rounded-pill px-[11px] py-1.5 text-[10.5px] font-semibold"
+                      [style.background]="r.pt_applicable ? '#dff1ef' : '#eef2f6'" [style.color]="r.pt_applicable ? '#0b7d72' : '#8094a6'">
+                      <i class="ph {{ r.pt_applicable ? 'ph-check-circle' : 'ph-x-circle' }}"></i>PT
+                    </button>
+                    <button (click)="toggleStatutory(r, 'gratuity_applicable')" class="flex items-center gap-1.5 rounded-pill px-[11px] py-1.5 text-[10.5px] font-semibold"
+                      [style.background]="r.gratuity_applicable ? '#dff1ef' : '#eef2f6'" [style.color]="r.gratuity_applicable ? '#0b7d72' : '#8094a6'">
+                      <i class="ph {{ r.gratuity_applicable ? 'ph-check-circle' : 'ph-x-circle' }}"></i>Gratuity
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Illustrative payslip breakdown for a representative CTC -->
+                <div class="bg-[#f7f9fb] rounded-[10px] p-[14px]">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-[10px] font-bold tracking-[.5px] text-[#9aabbb] uppercase">Illustrative Payslip</span>
+                    <span class="text-[10.5px] text-[#9aabbb]">at ₹{{ illustrativeCtc(r.employment_type) | number }}/mo CTC</span>
+                  </div>
+                  <div *ngFor="let line of payslipLines(r)" class="flex justify-between py-[5px] text-[12px]" [class]="line.bold ? 'border-t border-[#e2e8ee] mt-1 pt-2 font-semibold' : ''">
+                    <span [class]="line.bold ? 'text-[#22384a]' : 'text-[#5f7689]'">{{ line.label }}</span>
+                    <span class="font-mono" [class]="line.bold ? 'text-[#12303f]' : 'text-[#3f566a]'">₹{{ line.value | number }}</span>
+                  </div>
+                </div>
               </div>
-              <div>
-                <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Est. TDS/mo (new regime, no declarations)</div>
-                <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).estimatedTDS | number }}</div>
+
+              <!-- Real PF/ESI/TDS aggregate, collapsed by default -->
+              <button type="button" (click)="toggleBreakdown(r.employment_type)" class="flex items-center gap-1.5 mt-4 text-[11.5px] font-semibold text-brand">
+                <i class="ph {{ isBreakdownOpen(r.employment_type) ? 'ph-caret-down' : 'ph-caret-right' }}"></i>
+                Real statutory contribution total {{ staffCountFor(r.employment_type) > 0 ? '(' + staffCountFor(r.employment_type) + ' staff)' : '' }}
+              </button>
+              <div *ngIf="isBreakdownOpen(r.employment_type)" class="mt-3 pt-3 border-t border-[#f1f4f8]">
+                <div *ngIf="staffWithSalaryFor(r.employment_type).length === 0" class="text-[11px] text-muted-1">
+                  No staff with recorded monthly salary in this employment type yet — add a salary via "+ New Staff" or onboarding conversion to see real figures here.
+                </div>
+                <div *ngIf="staffWithSalaryFor(r.employment_type).length > 0" class="grid grid-cols-2 sm:grid-cols-5 gap-3 text-[11.5px]">
+                  <div>
+                    <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Employee PF/mo</div>
+                    <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).employeePF | number }}</div>
+                  </div>
+                  <div>
+                    <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Employer PF+EDLI/mo</div>
+                    <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).employerTotal | number }}</div>
+                  </div>
+                  <div>
+                    <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Employee ESI/mo</div>
+                    <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).employeeESI | number }}</div>
+                  </div>
+                  <div>
+                    <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Employer ESI/mo</div>
+                    <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).employerESI | number }}</div>
+                  </div>
+                  <div>
+                    <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Est. TDS/mo (new regime)</div>
+                    <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).estimatedTDS | number }}</div>
+                  </div>
+                </div>
+                <div *ngIf="staffWithSalaryFor(r.employment_type).length > 0" class="text-[10.5px] text-muted-1 mt-1.5">
+                  ESI wage ceiling is ₹21,000/month — staff above this are correctly excluded.
+                </div>
               </div>
-            </div>
-            <div *ngIf="staffWithSalaryFor(r.employment_type).length > 0" class="text-[10.5px] text-muted-1 mt-1.5">
-              Across {{ staffWithSalaryFor(r.employment_type).length }} staff with recorded salary. ESI wage ceiling is ₹21,000/month -- staff above this are correctly excluded.
             </div>
           </div>
         </div>
@@ -922,6 +1051,7 @@ export class HrComponent implements OnDestroy {
   activeTab: HrTab = 'directory';
   tabs: { key: HrTab; label: string; icon: string }[] = [
     { key: 'directory', label: 'Directory & Leave', icon: 'ph-users-three' },
+    { key: 'attendance', label: 'Attendance', icon: 'ph-fingerprint' },
     { key: 'onboarding', label: 'Onboarding', icon: 'ph-user-plus' },
     { key: 'exit', label: 'Exit', icon: 'ph-user-minus' },
     { key: 'salary', label: 'Salary Structure', icon: 'ph-currency-circle-dollar' },
@@ -958,12 +1088,17 @@ export class HrComponent implements OnDestroy {
   letters: RealtimeTableHandle<any>;
   loans: RealtimeTableHandle<any>;
   grievances: RealtimeTableHandle<any>;
+  attendance: RealtimeTableHandle<any>;
+
+  attendanceStaffId = '';
+  capturingMode: 'in' | 'out' | null = null;
 
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.staff = this.realtime.watch('staff_directory', (q) => q.order('full_name'));
     this.leaves = this.realtime.watch('leave_requests', (q) => q.order('created_at', { ascending: false }));
     this.onboarding = this.realtime.watch('hr_onboarding', (q) => q.order('created_at', { ascending: false }));
     this.exits = this.realtime.watch('hr_exits', (q) => q.order('created_at', { ascending: false }));
+    this.attendance = this.realtime.watch('hr_attendance', (q) => q.order('attendance_date', { ascending: false }));
     this.salaryStructures = this.realtime.watch('hr_salary_structure', (q) => q.order('employment_type'));
     this.letters = this.realtime.watch('hr_letters', (q) => q.order('created_at', { ascending: false }));
     this.loans = this.realtime.watch('hr_loans', (q) => q.order('created_at', { ascending: false }));
@@ -997,8 +1132,22 @@ export class HrComponent implements OnDestroy {
   // staff member and leave type -- not a static display, an actual running
   // total against the statutory entitlement.
   leaveBalance(): { text: string; overLimit: boolean } {
-    const entitlement = LEAVE_ENTITLEMENTS[this.leaveForm.leave_type];
+    let entitlement = LEAVE_ENTITLEMENTS[this.leaveForm.leave_type];
     if (entitlement == null) return { text: 'No statutory cap for this leave type.', overLimit: false };
+
+    // Earned Leave accrues from actual attendance under the Factories Act
+    // 1948 (1 day EL per 20 days present) -- once real attendance data
+    // exists for this staff member, use the real accrual instead of the
+    // static annual grant, which is only a fallback for staff not yet
+    // tracked via Attendance.
+    let accrualNote = '';
+    if (this.leaveForm.leave_type === 'Earned' && this.leaveForm.staff_id) {
+      const presentDays = this.presentDaysThisYear(this.leaveForm.staff_id);
+      if (presentDays > 0) {
+        entitlement = Math.floor(presentDays / 20);
+        accrualNote = ` (accrued from ${presentDays} present days on record, not the flat annual grant)`;
+      }
+    }
 
     const yearStart = new Date().getFullYear() + '-01-01';
     const usedDays = this.leaves.data()
@@ -1015,7 +1164,7 @@ export class HrComponent implements OnDestroy {
 
     const overLimit = usedDays >= entitlement;
     return {
-      text: `Used ${usedDays} of ${entitlement} days this year (${this.leaveForm.leave_type}).`,
+      text: `Used ${usedDays} of ${entitlement} days this year (${this.leaveForm.leave_type})${accrualNote}.`,
       overLimit,
     };
   }
@@ -1253,6 +1402,101 @@ export class HrComponent implements OnDestroy {
   }
 
   // ---------- Salary Structure ----------
+  // Visual identity per employment type, matching the app's existing tint
+  // palette for consistency with KPI cards elsewhere.
+  employmentTypeTint(type: string): { bg: string; fg: string } {
+    const map: Record<string, { bg: string; fg: string }> = {
+      Permanent: { bg: '#e4edfb', fg: '#2257a3' },
+      'Medical Officer': { bg: '#ece8fb', fg: '#5536c9' },
+      Contract: { bg: '#fdf0d8', fg: '#946200' },
+      Consultant: { bg: '#fbe3e3', fg: '#b42318' },
+      Intern: { bg: '#dff1ef', fg: '#0b7d72' },
+    };
+    return map[type] ?? { bg: '#eef2f6', fg: '#5f7689' };
+  }
+
+  employmentTypeIcon(type: string): string {
+    const map: Record<string, string> = {
+      Permanent: 'ph-identification-badge',
+      'Medical Officer': 'ph-stethoscope',
+      Contract: 'ph-file-text',
+      Consultant: 'ph-briefcase',
+      Intern: 'ph-graduation-cap',
+    };
+    return map[type] ?? 'ph-user';
+  }
+
+  staffCountFor(employmentType: string): number {
+    return this.staff.data().filter((s: any) => s.employment_type === employmentType).length;
+  }
+
+  // Real average salary for staff on record in this type where available,
+  // otherwise a reasonable illustrative default so the payslip breakdown
+  // always shows something concrete rather than an empty state.
+  illustrativeCtc(employmentType: string): number {
+    const withSalary = this.staffWithSalaryFor(employmentType);
+    if (withSalary.length > 0) {
+      return Math.round(withSalary.reduce((sum: number, s: any) => sum + Number(s.monthly_salary), 0) / withSalary.length);
+    }
+    const defaults: Record<string, number> = {
+      Permanent: 30000, 'Medical Officer': 120000, Contract: 22000, Consultant: 80000, Intern: 12000,
+    };
+    return defaults[employmentType] ?? 25000;
+  }
+
+  // A real payslip-style breakdown -- Basic/HRA/NPA/Conveyance/Special
+  // Allowance (the balancing figure) building up to Gross, using this
+  // row's actual pay-component percentages against a representative CTC.
+  payslipLines(r: any): { label: string; value: number; bold?: boolean }[] {
+    const ctc = this.illustrativeCtc(r.employment_type);
+    const basic = Math.round(ctc * (Number(r.basic_pct) / 100));
+    const hra = Math.round(basic * (Number(r.hra_pct) / 100));
+    const npa = Math.round(basic * (Number(r.npa_pct ?? 0) / 100));
+    const conveyance = Number(r.conveyance) || 0;
+    const specialAllowance = Math.max(0, ctc - basic - hra - npa - conveyance);
+    const lines: { label: string; value: number; bold?: boolean }[] = [
+      { label: 'Basic', value: basic },
+      { label: 'HRA', value: hra },
+    ];
+    if (npa > 0) lines.push({ label: 'NPA', value: npa });
+    lines.push({ label: 'Conveyance', value: conveyance });
+    lines.push({ label: 'Special Allowance (balancing)', value: specialAllowance });
+    lines.push({ label: 'Gross (CTC)', value: ctc, bold: true });
+    return lines;
+  }
+
+  openBreakdowns = new Set<string>();
+
+  toggleBreakdown(employmentType: string) {
+    if (this.openBreakdowns.has(employmentType)) this.openBreakdowns.delete(employmentType);
+    else this.openBreakdowns.add(employmentType);
+  }
+
+  isBreakdownOpen(employmentType: string): boolean {
+    return this.openBreakdowns.has(employmentType);
+  }
+
+  // Hospital-wide summary across every employment type combined -- the
+  // "at a glance" figures a finance lead would actually want first.
+  salaryOverviewKpis(): KpiItem[] {
+    const allWithSalary = this.staff.data().filter((s: any) => s.monthly_salary != null);
+    let employerLiability = 0, employeeDeductions = 0, estTDS = 0;
+    for (const s of allWithSalary) {
+      const structure = this.salaryStructures.data().find((r: any) => r.employment_type === s.employment_type);
+      if (!structure) continue;
+      const d = computeStatutoryDeductions(Number(s.monthly_salary), structure);
+      employerLiability += d.employerEPS + d.employerEPF + d.employerEDLI + d.employerESI;
+      employeeDeductions += d.employeePF + d.employeeESI;
+      estTDS += estimateMonthlyTDS(Number(s.monthly_salary) * 12);
+    }
+    return [
+      { label: 'Staff with Salary Data', value: String(allWithSalary.length), icon: 'ph-identification-badge', tintKey: 'blue' },
+      { label: 'Monthly Employer Liability', value: '\u20b9' + employerLiability.toLocaleString('en-IN'), icon: 'ph-buildings', tintKey: 'indigo' },
+      { label: 'Monthly Employee Deductions', value: '\u20b9' + employeeDeductions.toLocaleString('en-IN'), icon: 'ph-arrow-circle-down', tintKey: 'amber' },
+      { label: 'Est. Monthly TDS (all staff)', value: '\u20b9' + estTDS.toLocaleString('en-IN'), icon: 'ph-receipt', tintKey: 'teal' },
+    ];
+  }
+
   staffWithSalaryFor(employmentType: string) {
     return this.staff.data().filter((s: any) => s.employment_type === employmentType && s.monthly_salary != null);
   }
@@ -1461,6 +1705,85 @@ export class HrComponent implements OnDestroy {
     await this.supabaseService.client.from('hr_grievances').update({ stage: 'Escalated', escalated_posh: true }).eq('id', g.id);
   }
 
+  staffNameFor(staffId: string): string {
+    return this.staff.data().find((s: any) => s.id === staffId)?.full_name ?? 'Unknown';
+  }
+
+  todaysAttendanceFor(staffId: string): any {
+    const today = new Date().toISOString().slice(0, 10);
+    return this.attendance.data().find((a: any) => a.staff_id === staffId && a.attendance_date === today) ?? null;
+  }
+
+  recentAttendance() {
+    return this.attendance.data().slice(0, 50);
+  }
+
+  hoursWorked(a: any): string {
+    if (!a.check_in_at || !a.check_out_at) return '—';
+    const hours = (new Date(a.check_out_at).getTime() - new Date(a.check_in_at).getTime()) / 3600000;
+    return hours.toFixed(1);
+  }
+
+  startCapture(mode: 'in' | 'out') {
+    this.capturingMode = mode;
+  }
+
+  async onCaptured(capture: AttendanceCapture) {
+    if (!this.attendanceStaffId || !this.capturingMode) return;
+    const client = this.supabaseService.client;
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (this.capturingMode === 'in') {
+      const { error } = await client.from('hr_attendance').insert({
+        staff_id: this.attendanceStaffId,
+        attendance_date: today,
+        check_in_at: new Date().toISOString(),
+        check_in_photo: capture.photo,
+        check_in_lat: capture.lat,
+        check_in_lng: capture.lng,
+        status: 'Present',
+      });
+      if (error) alert(error.message);
+    } else {
+      const existing = this.todaysAttendanceFor(this.attendanceStaffId);
+      if (existing) {
+        const { error } = await client.from('hr_attendance').update({
+          check_out_at: new Date().toISOString(),
+          check_out_photo: capture.photo,
+        }).eq('id', existing.id);
+        if (error) alert(error.message);
+      }
+    }
+    this.capturingMode = null;
+    await this.attendance.refresh();
+  }
+
+  // Real Present-day count this year, feeding the Factories Act 1948
+  // Earned Leave accrual formula (1 day EL per 20 days present) -- used
+  // by leaveBalance() to replace the static entitlement once attendance
+  // data actually exists for this staff member.
+  presentDaysThisYear(staffId: string): number {
+    const yearStart = new Date().getFullYear() + '-01-01';
+    return this.attendance.data().filter((a: any) =>
+      a.staff_id === staffId && a.status !== 'Absent' && (a.attendance_date ?? '') >= yearStart
+    ).length;
+  }
+
+  attendanceKpis(): KpiItem[] {
+    const today = new Date().toISOString().slice(0, 10);
+    const todayRecords = this.attendance.data().filter((a: any) => a.attendance_date === today);
+    const checkedIn = todayRecords.filter((a: any) => a.check_in_at && !a.check_out_at);
+    const checkedOut = todayRecords.filter((a: any) => a.check_out_at);
+    const totalStaff = this.staff.data().length;
+    const notMarked = Math.max(0, totalStaff - todayRecords.length);
+    return [
+      { label: 'Present Today', value: String(todayRecords.length), icon: 'ph-check-circle', tintKey: 'green' },
+      { label: 'Currently Checked In', value: String(checkedIn.length), icon: 'ph-clock', tintKey: 'blue' },
+      { label: 'Checked Out Today', value: String(checkedOut.length), icon: 'ph-sign-out', tintKey: 'teal' },
+      { label: 'Not Marked Yet', value: String(notMarked), icon: 'ph-question', tintKey: 'amber' },
+    ];
+  }
+
   ngOnDestroy() {
     this.staff.dispose();
     this.leaves.dispose();
@@ -1470,5 +1793,6 @@ export class HrComponent implements OnDestroy {
     this.letters.dispose();
     this.loans.dispose();
     this.grievances.dispose();
+    this.attendance.dispose();
   }
 }
