@@ -108,6 +108,20 @@ interface StatutoryBreakdown {
   esiApplicable: boolean;
   employeeESI: number;
   employerESI: number;
+  professionalTax: number;
+}
+
+// Maharashtra Professional Tax slabs, FY 2025-26/2026-27 (this hospital's
+// operating state) -- calculated on GROSS monthly salary, not CTC, Basic,
+// or Net (a common real-world error). Capped at Rs 2,500/year via the
+// February +Rs 100 adjustment (Rs 200 x 11 months + Rs 300 in February).
+// Maharashtra specifically exempts women earning up to Rs 25,000/month --
+// a real, material, commonly-missed exemption, not a rounding footnote.
+function computeMaharashtraPT(grossMonthly: number, gender: string | null, isFebruary: boolean): number {
+  if (gender === 'Female' && grossMonthly <= 25000) return 0;
+  if (grossMonthly <= 7500) return 0;
+  if (grossMonthly <= 10000) return 175;
+  return isFebruary ? 300 : 200;
 }
 
 // New Tax Regime (Section 115BAC, the DEFAULT regime unless an employee
@@ -153,7 +167,7 @@ function estimateMonthlyTDS(annualCTC: number): number {
   return Math.round(withCess / 12);
 }
 
-function computeStatutoryDeductions(ctc: number, structure: any): StatutoryBreakdown {
+function computeStatutoryDeductions(ctc: number, structure: any, gender: string | null = null): StatutoryBreakdown {
   const basic = ctc * (Number(structure?.basic_pct ?? 0) / 100);
   const pfApplicable = !!structure?.pf_applicable;
   const pfWageBase = Math.min(basic, PF_WAGE_CEILING);
@@ -168,7 +182,10 @@ function computeStatutoryDeductions(ctc: number, structure: any): StatutoryBreak
   const employeeESI = esiApplicable ? Math.round(ctc * 0.0075) : 0;
   const employerESI = esiApplicable ? Math.round(ctc * 0.0325) : 0;
 
-  return { basic, employeePF, employerEPS, employerEPF, employerEDLI, adminCharge, esiApplicable, employeeESI, employerESI };
+  const isFebruary = new Date().getMonth() === 1; // 0-indexed: January=0, February=1
+  const professionalTax = structure?.pt_applicable ? computeMaharashtraPT(ctc, gender, isFebruary) : 0;
+
+  return { basic, employeePF, employerEPS, employerEPF, employerEDLI, adminCharge, esiApplicable, employeeESI, employerESI, professionalTax };
 }
 
 function shortId(id: string, prefix: string): string {
@@ -545,6 +562,54 @@ function pillStyle(stage: string) {
       <div *ngIf="activeTab === 'salary'" class="flex flex-col gap-[14px]">
         <app-kpi-row [items]="salaryOverviewKpis()"></app-kpi-row>
 
+        <!-- Statutory Registration Numbers -- real payroll setup always
+             starts here: without these identifiers, you cannot legally
+             file PF/ESI/PT returns for anyone, regardless of how correct
+             the per-employee math is. Maharashtra specifically requires
+             BOTH PTEC (company's own registration) and PTRC (authorization
+             to deduct from employees) -- missing PTEC is the single most
+             common PT audit finding. -->
+        <div class="bg-white border border-[#e7ecf2] rounded-[14px] p-[16px_18px]">
+          <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+            <div>
+              <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Statutory Registration Numbers</h3>
+              <div class="text-[12px] text-[#8094a6] mt-[3px]">Required before any statutory return can be legally filed for this hospital.</div>
+            </div>
+            <span class="px-[10px] py-1 rounded-pill text-[11px] font-semibold"
+              [style.background]="registrationCompleteness().pct === 100 ? '#dff1ef' : '#fdf0d8'"
+              [style.color]="registrationCompleteness().pct === 100 ? '#0b7d72' : '#946200'">
+              {{ registrationCompleteness().filled }}/{{ registrationCompleteness().total }} configured
+            </span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[12px]" *ngIf="statutoryRegistrations.data()[0] as reg">
+            <div>
+              <label class="block text-[10px] font-semibold text-muted-1 uppercase mb-1">PF Establishment Code</label>
+              <input [ngModel]="reg.pf_establishment_code" (ngModelChange)="updateRegistrationField('pf_establishment_code', $event)"
+                placeholder="e.g. MH/BAN/1234567/000" class="w-full px-2.5 py-1.5 border border-line-1 rounded-[7px] text-[12.5px] font-mono" />
+            </div>
+            <div>
+              <label class="block text-[10px] font-semibold text-muted-1 uppercase mb-1">ESI Employer Code</label>
+              <input [ngModel]="reg.esi_employer_code" (ngModelChange)="updateRegistrationField('esi_employer_code', $event)"
+                placeholder="e.g. 12345678900001234" class="w-full px-2.5 py-1.5 border border-line-1 rounded-[7px] text-[12.5px] font-mono" />
+            </div>
+            <div>
+              <label class="block text-[10px] font-semibold text-muted-1 uppercase mb-1">PT — PTEC (company)</label>
+              <input [ngModel]="reg.pt_ptec_number" (ngModelChange)="updateRegistrationField('pt_ptec_number', $event)"
+                placeholder="11-digit TIN" class="w-full px-2.5 py-1.5 border border-line-1 rounded-[7px] text-[12.5px] font-mono" />
+            </div>
+            <div>
+              <label class="block text-[10px] font-semibold text-muted-1 uppercase mb-1">PT — PTRC (employee deduction)</label>
+              <input [ngModel]="reg.pt_ptrc_number" (ngModelChange)="updateRegistrationField('pt_ptrc_number', $event)"
+                placeholder="12-digit TIN" class="w-full px-2.5 py-1.5 border border-line-1 rounded-[7px] text-[12.5px] font-mono" />
+            </div>
+            <div>
+              <label class="block text-[10px] font-semibold text-muted-1 uppercase mb-1">TAN (for TDS deposits)</label>
+              <input [ngModel]="reg.tan_number" (ngModelChange)="updateRegistrationField('tan_number', $event)"
+                placeholder="e.g. MUMA12345B" class="w-full px-2.5 py-1.5 border border-line-1 rounded-[7px] text-[12.5px] font-mono" />
+            </div>
+          </div>
+        </div>
+
         <!-- Individual employee salary -- the type-level master below sets
              POLICY (what % is Basic, what statutory rules apply), but says
              nothing about what any specific person actually earns. This is
@@ -555,47 +620,95 @@ function pillStyle(stage: string) {
             <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Individual Employee Salary</h3>
             <div class="text-[12px] text-[#8094a6] mt-[3px]">
               Actual monthly CTC per person -- the type-level structure below sets policy, this is what each
-              employee actually earns. Click any salary to edit it.
+              employee actually earns. Gender is needed for accurate Professional Tax (Maharashtra exempts
+              women up to ₹25,000/month).
             </div>
           </div>
           <div class="overflow-x-auto"><table class="w-full text-sm">
             <thead>
               <tr class="text-left text-[11.5px] text-muted-1 border-b border-line-1">
                 <th class="px-4 py-2 font-medium">Name</th>
-                <th class="px-4 py-2 font-medium">Role / Dept</th>
-                <th class="px-4 py-2 font-medium">Employment Type</th>
-                <th class="px-4 py-2 font-medium">Monthly Salary</th>
+                <th class="px-4 py-2 font-medium">Type</th>
+                <th class="px-4 py-2 font-medium">Gender</th>
+                <th class="px-4 py-2 font-medium">PF UAN</th>
+                <th class="px-4 py-2 font-medium">ESI No.</th>
+                <th class="px-4 py-2 font-medium">Monthly CTC</th>
+                <th class="px-4 py-2 font-medium">Net Pay</th>
+                <th class="px-4 py-2 font-medium"></th>
               </tr>
             </thead>
             <tbody>
               <tr *ngIf="staff.data().length === 0">
-                <td colspan="4" class="px-4 py-6 text-center text-body-2">No staff on record yet.</td>
+                <td colspan="8" class="px-4 py-6 text-center text-body-2">No staff on record yet.</td>
               </tr>
               <tr *ngFor="let s of staff.data()" class="border-b border-line-2 last:border-0">
-                <td class="px-4 py-2 font-medium text-ink-2">{{ s.full_name }}</td>
-                <td class="px-4 py-2 text-body-1">
-                  <div>{{ s.title }}</div>
-                  <div class="text-[11px] text-muted-1">{{ s.department }}</div>
+                <td class="px-4 py-2">
+                  <div class="font-medium text-ink-2">{{ s.full_name }}</div>
+                  <div class="text-[11px] text-muted-1">{{ s.title }} · {{ s.department }}</div>
                 </td>
                 <td class="px-4 py-2">
-                  <span class="px-2 py-0.5 rounded-pill text-[11px] font-semibold"
+                  <span class="px-2 py-0.5 rounded-pill text-[10.5px] font-semibold"
                     [style.background]="employmentTypeTint(s.employment_type).bg" [style.color]="employmentTypeTint(s.employment_type).fg">
                     {{ s.employment_type || '—' }}
                   </span>
                 </td>
                 <td class="px-4 py-2">
-                  <div class="flex items-center gap-1.5">
-                    <span class="text-body-1">₹</span>
+                  <select [ngModel]="s.gender" (ngModelChange)="updateStaffField(s, 'gender', $event)" class="border border-line-1 rounded-[7px] px-1.5 py-1 text-[11.5px]">
+                    <option [ngValue]="null">—</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </td>
+                <td class="px-4 py-2">
+                  <input [ngModel]="s.pf_uan" (ngModelChange)="updateStaffField(s, 'pf_uan', $event)" placeholder="—"
+                    class="w-[110px] px-1.5 py-1 border border-line-1 rounded-[7px] text-[11px] font-mono" />
+                </td>
+                <td class="px-4 py-2">
+                  <input [ngModel]="s.esi_number" (ngModelChange)="updateStaffField(s, 'esi_number', $event)" placeholder="—"
+                    class="w-[110px] px-1.5 py-1 border border-line-1 rounded-[7px] text-[11px] font-mono" />
+                </td>
+                <td class="px-4 py-2">
+                  <div class="flex items-center gap-1">
+                    <span class="text-body-1 text-[11.5px]">₹</span>
                     <input type="number" min="0" [ngModel]="s.monthly_salary" (ngModelChange)="updateStaffSalary(s, $event)"
                       placeholder="Not set"
-                      class="w-[110px] px-2 py-1 border rounded-[7px] text-[12.5px] font-mono font-semibold"
+                      class="w-[95px] px-2 py-1 border rounded-[7px] text-[12px] font-mono font-semibold"
                       [class]="s.monthly_salary == null ? 'border-warning-fg bg-warning-bg' : 'border-line-1'" />
-                    <span *ngIf="s.monthly_salary == null" class="text-[10.5px] text-warning-fg">not set</span>
                   </div>
+                </td>
+                <td class="px-4 py-2 font-mono text-[12px] font-semibold text-[#12303f]">
+                  {{ s.monthly_salary != null ? '₹' + (netPayFor(s) | number) : '—' }}
+                </td>
+                <td class="px-4 py-2">
+                  <button *ngIf="s.monthly_salary != null" (click)="printPayslip(s)" title="Print payslip"
+                    class="border border-line-1 bg-white hover:bg-line-2 rounded-[7px] w-[26px] h-[26px] flex items-center justify-center">
+                    <i class="ph ph-printer text-[13px] text-body-1"></i>
+                  </button>
                 </td>
               </tr>
             </tbody>
           </table></div>
+        </div>
+
+        <!-- Printable payslip, hidden on screen -->
+        <div *ngIf="printingPayslip" class="print-area hidden">
+          <app-print-letterhead title="Payslip"></app-print-letterhead>
+          <div style="font-size:13px; margin-bottom:16px;">
+            <div style="font-weight:600; color:#12303f;">{{ printingPayslip.full_name }}</div>
+            <div style="color:#5f7689;">{{ printingPayslip.title }} · {{ printingPayslip.department }} · {{ printingPayslip.employment_type }}</div>
+            <div style="color:#8094a6; font-size:11px;">PF UAN: {{ printingPayslip.pf_uan || '—' }} · ESI No: {{ printingPayslip.esi_number || '—' }}</div>
+          </div>
+          <table style="width:100%; border-collapse:collapse; font-size:13px;">
+            <tbody>
+              <tr *ngFor="let line of printingPayslipLines" style="border-bottom:1px solid #f1f4f8;">
+                <td style="padding:6px 0; color:#5f7689;">{{ line.label }}</td>
+                <td style="padding:6px 0; text-align:right; font-family:monospace;" [style.color]="line.value < 0 ? '#b42318' : '#12303f'">
+                  {{ line.value < 0 ? '-' : '' }}₹{{ (line.value < 0 ? -line.value : line.value) | number }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         <div class="bg-white border border-[#e7ecf2] rounded-[14px] overflow-hidden">
@@ -690,10 +803,15 @@ function pillStyle(stage: string) {
                     <span class="text-[10px] font-bold tracking-[.5px] text-[#9aabbb] uppercase">Illustrative Payslip</span>
                     <span class="text-[10.5px] text-[#9aabbb]">at ₹{{ illustrativeCtc(r.employment_type) | number }}/mo CTC</span>
                   </div>
-                  <div *ngFor="let line of payslipLines(r)" class="flex justify-between py-[5px] text-[12px]" [class]="line.bold ? 'border-t border-[#e2e8ee] mt-1 pt-2 font-semibold' : ''">
-                    <span [class]="line.bold ? 'text-[#22384a]' : 'text-[#5f7689]'">{{ line.label }}</span>
-                    <span class="font-mono" [class]="line.bold ? 'text-[#12303f]' : 'text-[#3f566a]'">₹{{ line.value | number }}</span>
-                  </div>
+                  <ng-container *ngFor="let line of payslipLines(r)">
+                    <div *ngIf="line.section" class="text-[10px] font-bold tracking-[.4px] text-[#9aabbb] uppercase pt-2 pb-0.5">{{ line.label }}</div>
+                    <div *ngIf="!line.section" class="flex justify-between py-[5px] text-[12px]" [class]="line.bold ? 'border-t border-[#e2e8ee] mt-1 pt-2 font-semibold' : ''">
+                      <span [class]="line.bold ? 'text-[#22384a]' : 'text-[#5f7689]'">{{ line.label }}</span>
+                      <span class="font-mono" [class]="line.bold ? 'text-[#12303f]' : (line.value < 0 ? 'text-danger-fg' : 'text-[#3f566a]')">
+                        {{ line.value < 0 ? '-' : '' }}₹{{ (line.value < 0 ? -line.value : line.value) | number }}
+                      </span>
+                    </div>
+                  </ng-container>
                 </div>
               </div>
 
@@ -706,7 +824,7 @@ function pillStyle(stage: string) {
                 <div *ngIf="staffWithSalaryFor(r.employment_type).length === 0" class="text-[11px] text-muted-1">
                   No staff with recorded monthly salary in this employment type yet — add a salary via "+ New Staff" or onboarding conversion to see real figures here.
                 </div>
-                <div *ngIf="staffWithSalaryFor(r.employment_type).length > 0" class="grid grid-cols-2 sm:grid-cols-5 gap-3 text-[11.5px]">
+                <div *ngIf="staffWithSalaryFor(r.employment_type).length > 0" class="grid grid-cols-2 sm:grid-cols-6 gap-3 text-[11.5px]">
                   <div>
                     <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Employee PF/mo</div>
                     <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).employeePF | number }}</div>
@@ -726,6 +844,10 @@ function pillStyle(stage: string) {
                   <div>
                     <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Est. TDS/mo (new regime)</div>
                     <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).estimatedTDS | number }}</div>
+                  </div>
+                  <div>
+                    <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Professional Tax/mo (all staff)</div>
+                    <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).totalPT | number }}</div>
                   </div>
                 </div>
                 <div *ngIf="staffWithSalaryFor(r.employment_type).length > 0" class="text-[10.5px] text-muted-1 mt-1.5">
@@ -1142,6 +1264,7 @@ export class HrComponent implements OnDestroy {
   loans: RealtimeTableHandle<any>;
   grievances: RealtimeTableHandle<any>;
   attendance: RealtimeTableHandle<any>;
+  statutoryRegistrations: RealtimeTableHandle<any>;
 
   attendanceStaffId = '';
   capturingMode: 'in' | 'out' | null = null;
@@ -1152,6 +1275,7 @@ export class HrComponent implements OnDestroy {
     this.onboarding = this.realtime.watch('hr_onboarding', (q) => q.order('created_at', { ascending: false }));
     this.exits = this.realtime.watch('hr_exits', (q) => q.order('created_at', { ascending: false }));
     this.attendance = this.realtime.watch('hr_attendance', (q) => q.order('attendance_date', { ascending: false }));
+    this.statutoryRegistrations = this.realtime.watch('hr_statutory_registrations');
     this.salaryStructures = this.realtime.watch('hr_salary_structure', (q) => q.order('employment_type'));
     this.letters = this.realtime.watch('hr_letters', (q) => q.order('created_at', { ascending: false }));
     this.loans = this.realtime.watch('hr_loans', (q) => q.order('created_at', { ascending: false }));
@@ -1479,6 +1603,74 @@ export class HrComponent implements OnDestroy {
     return map[type] ?? 'ph-user';
   }
 
+  async updateRegistrationField(field: string, value: string) {
+    const reg = this.statutoryRegistrations.data()[0];
+    if (!reg) return;
+    const { error } = await this.supabaseService.client
+      .from('hr_statutory_registrations')
+      .update({ [field]: value || null, updated_at: new Date().toISOString() })
+      .eq('id', reg.id);
+    if (error) alert(error.message);
+    await this.statutoryRegistrations.refresh();
+  }
+
+  registrationCompleteness(): { filled: number; total: number; pct: number } {
+    const reg = this.statutoryRegistrations.data()[0];
+    const fields = ['pf_establishment_code', 'esi_employer_code', 'pt_ptec_number', 'pt_ptrc_number', 'tan_number'];
+    const filled = reg ? fields.filter((f) => !!reg[f]).length : 0;
+    return { filled, total: fields.length, pct: Math.round((filled / fields.length) * 100) };
+  }
+
+  async updateStaffField(s: any, field: string, value: string) {
+    const { error } = await this.supabaseService.client.from('staff_directory').update({ [field]: value || null }).eq('id', s.id);
+    if (error) alert(error.message);
+    await this.staff.refresh();
+  }
+
+  // Real Net Pay for a specific employee, using their actual salary,
+  // employment type's structure, and their own gender (for accurate PT).
+  netPayFor(s: any): number {
+    const structure = this.salaryStructures.data().find((r: any) => r.employment_type === s.employment_type);
+    if (!structure || s.monthly_salary == null) return 0;
+    const d = computeStatutoryDeductions(Number(s.monthly_salary), structure, s.gender);
+    return Number(s.monthly_salary) - d.employeePF - d.employeeESI - d.professionalTax;
+  }
+
+  printingPayslip: any = null;
+  printingPayslipLines: { label: string; value: number }[] = [];
+
+  printPayslip(s: any) {
+    const structure = this.salaryStructures.data().find((r: any) => r.employment_type === s.employment_type);
+    if (!structure) return;
+    const ctc = Number(s.monthly_salary);
+    const basic = Math.round(ctc * (Number(structure.basic_pct) / 100));
+    const hra = Math.round(basic * (Number(structure.hra_pct) / 100));
+    const npa = Math.round(basic * (Number(structure.npa_pct ?? 0) / 100));
+    const conveyance = Number(structure.conveyance) || 0;
+    const specialAllowance = Math.max(0, ctc - basic - hra - npa - conveyance);
+    const d = computeStatutoryDeductions(ctc, structure, s.gender);
+
+    const lines: { label: string; value: number }[] = [
+      { label: 'Basic', value: basic },
+      { label: 'HRA', value: hra },
+    ];
+    if (npa > 0) lines.push({ label: 'NPA', value: npa });
+    lines.push({ label: 'Conveyance', value: conveyance });
+    lines.push({ label: 'Special Allowance', value: specialAllowance });
+    lines.push({ label: 'Gross Pay', value: ctc });
+    if (d.employeePF > 0) lines.push({ label: 'Employee PF', value: -d.employeePF });
+    if (d.employeeESI > 0) lines.push({ label: 'Employee ESI', value: -d.employeeESI });
+    if (d.professionalTax > 0) lines.push({ label: 'Professional Tax', value: -d.professionalTax });
+    lines.push({ label: 'Net Take-Home Pay', value: this.netPayFor(s) });
+
+    this.printingPayslip = s;
+    this.printingPayslipLines = lines;
+    setTimeout(() => {
+      window.print();
+      this.printingPayslip = null;
+    }, 50);
+  }
+
   async updateStaffSalary(s: any, value: string) {
     const salary = value === '' || value == null ? null : Number(value);
     const { error } = await this.supabaseService.client.from('staff_directory').update({ monthly_salary: salary }).eq('id', s.id);
@@ -1507,14 +1699,18 @@ export class HrComponent implements OnDestroy {
   // A real payslip-style breakdown -- Basic/HRA/NPA/Conveyance/Special
   // Allowance (the balancing figure) building up to Gross, using this
   // row's actual pay-component percentages against a representative CTC.
-  payslipLines(r: any): { label: string; value: number; bold?: boolean }[] {
+  payslipLines(r: any): { label: string; value: number; bold?: boolean; section?: boolean }[] {
     const ctc = this.illustrativeCtc(r.employment_type);
     const basic = Math.round(ctc * (Number(r.basic_pct) / 100));
     const hra = Math.round(basic * (Number(r.hra_pct) / 100));
     const npa = Math.round(basic * (Number(r.npa_pct ?? 0) / 100));
     const conveyance = Number(r.conveyance) || 0;
     const specialAllowance = Math.max(0, ctc - basic - hra - npa - conveyance);
-    const lines: { label: string; value: number; bold?: boolean }[] = [
+    const d = computeStatutoryDeductions(ctc, r, null); // illustrative -- no specific employee's gender to check PT exemption against
+    const totalDeductions = d.employeePF + d.employeeESI + d.professionalTax;
+    const netPay = ctc - totalDeductions;
+
+    const lines: { label: string; value: number; bold?: boolean; section?: boolean }[] = [
       { label: 'Basic', value: basic },
       { label: 'HRA', value: hra },
     ];
@@ -1522,6 +1718,12 @@ export class HrComponent implements OnDestroy {
     lines.push({ label: 'Conveyance', value: conveyance });
     lines.push({ label: 'Special Allowance (balancing)', value: specialAllowance });
     lines.push({ label: 'Gross (CTC)', value: ctc, bold: true });
+    lines.push({ label: 'Deductions', value: 0, section: true });
+    if (d.employeePF > 0) lines.push({ label: 'Employee PF', value: -d.employeePF });
+    if (d.employeeESI > 0) lines.push({ label: 'Employee ESI', value: -d.employeeESI });
+    if (d.professionalTax > 0) lines.push({ label: 'Professional Tax', value: -d.professionalTax });
+    if (totalDeductions === 0) lines.push({ label: 'None applicable at this pay level', value: 0 });
+    lines.push({ label: 'Net Take-Home Pay', value: netPay, bold: true });
     return lines;
   }
 
@@ -1540,19 +1742,20 @@ export class HrComponent implements OnDestroy {
   // "at a glance" figures a finance lead would actually want first.
   salaryOverviewKpis(): KpiItem[] {
     const allWithSalary = this.staff.data().filter((s: any) => s.monthly_salary != null);
-    let employerLiability = 0, employeeDeductions = 0, estTDS = 0;
+    let employerLiability = 0, employeeDeductions = 0, estTDS = 0, totalPT = 0;
     for (const s of allWithSalary) {
       const structure = this.salaryStructures.data().find((r: any) => r.employment_type === s.employment_type);
       if (!structure) continue;
-      const d = computeStatutoryDeductions(Number(s.monthly_salary), structure);
+      const d = computeStatutoryDeductions(Number(s.monthly_salary), structure, s.gender);
       employerLiability += d.employerEPS + d.employerEPF + d.employerEDLI + d.employerESI;
       employeeDeductions += d.employeePF + d.employeeESI;
+      totalPT += d.professionalTax;
       estTDS += estimateMonthlyTDS(Number(s.monthly_salary) * 12);
     }
     return [
       { label: 'Staff with Salary Data', value: String(allWithSalary.length), icon: 'ph-identification-badge', tintKey: 'blue' },
       { label: 'Monthly Employer Liability', value: '\u20b9' + employerLiability.toLocaleString('en-IN'), icon: 'ph-buildings', tintKey: 'indigo' },
-      { label: 'Monthly Employee Deductions', value: '\u20b9' + employeeDeductions.toLocaleString('en-IN'), icon: 'ph-arrow-circle-down', tintKey: 'amber' },
+      { label: 'Monthly Employee Deductions (PF+ESI+PT)', value: '\u20b9' + (employeeDeductions + totalPT).toLocaleString('en-IN'), icon: 'ph-arrow-circle-down', tintKey: 'amber' },
       { label: 'Est. Monthly TDS (all staff)', value: '\u20b9' + estTDS.toLocaleString('en-IN'), icon: 'ph-receipt', tintKey: 'teal' },
     ];
   }
@@ -1564,18 +1767,19 @@ export class HrComponent implements OnDestroy {
   // Real aggregate across every staff member on record in this employment
   // type with a recorded salary -- each computed individually against
   // their own CTC (basic derived from this row's basic_pct), then summed.
-  statutoryTotals(r: any): { employeePF: number; employerTotal: number; employeeESI: number; employerESI: number; estimatedTDS: number } {
+  statutoryTotals(r: any): { employeePF: number; employerTotal: number; employeeESI: number; employerESI: number; estimatedTDS: number; totalPT: number } {
     const staffList = this.staffWithSalaryFor(r.employment_type);
-    let employeePF = 0, employerTotal = 0, employeeESI = 0, employerESI = 0, estimatedTDS = 0;
+    let employeePF = 0, employerTotal = 0, employeeESI = 0, employerESI = 0, estimatedTDS = 0, totalPT = 0;
     for (const s of staffList) {
-      const d = computeStatutoryDeductions(Number(s.monthly_salary), r);
+      const d = computeStatutoryDeductions(Number(s.monthly_salary), r, s.gender);
       employeePF += d.employeePF;
       employerTotal += d.employerEPS + d.employerEPF + d.employerEDLI;
       employeeESI += d.employeeESI;
       employerESI += d.employerESI;
       estimatedTDS += estimateMonthlyTDS(Number(s.monthly_salary) * 12);
+      totalPT += d.professionalTax;
     }
-    return { employeePF, employerTotal, employeeESI, employerESI, estimatedTDS };
+    return { employeePF, employerTotal, employeeESI, employerESI, estimatedTDS, totalPT };
   }
 
   async toggleStatutory(r: any, field: string) {
@@ -1854,5 +2058,6 @@ export class HrComponent implements OnDestroy {
     this.loans.dispose();
     this.grievances.dispose();
     this.attendance.dispose();
+    this.statutoryRegistrations.dispose();
   }
 }
