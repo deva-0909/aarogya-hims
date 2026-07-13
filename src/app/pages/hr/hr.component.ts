@@ -109,6 +109,49 @@ interface StatutoryBreakdown {
   employerESI: number;
 }
 
+// New Tax Regime (Section 115BAC, the DEFAULT regime unless an employee
+// explicitly declares the old regime to their employer) slabs for FY
+// 2025-26 -- stable and unchanged for FY 2026-27 per Budget 2026. This is
+// an ESTIMATE ONLY: real payroll TDS also depends on individual
+// declarations (Form 12BB) which this system doesn't collect -- an
+// employee who opts for the old regime with HRA/80C/80D claims would see
+// a materially different number. Verified against a real cited reference
+// case before trusting this: Rs 15,00,000 annual salary should produce
+// exactly Rs 97,500 annual tax (Rs 8,125/month) after standard deduction
+// and cess -- confirmed by hand-computing the slabs below.
+const NEW_REGIME_STANDARD_DEDUCTION = 75000;
+const NEW_REGIME_SLABS = [
+  { upTo: 400000, rate: 0 },
+  { upTo: 800000, rate: 0.05 },
+  { upTo: 1200000, rate: 0.10 },
+  { upTo: 1600000, rate: 0.15 },
+  { upTo: 2000000, rate: 0.20 },
+  { upTo: 2400000, rate: 0.25 },
+  { upTo: Infinity, rate: 0.30 },
+];
+
+function estimateMonthlyTDS(annualCTC: number): number {
+  const taxableIncome = Math.max(0, annualCTC - NEW_REGIME_STANDARD_DEDUCTION);
+
+  // Section 87A rebate: taxable income up to Rs 12,00,000 is fully
+  // rebated (up to Rs 60,000) under the new regime -- effectively zero
+  // tax. Marginal relief for income slightly above this threshold is a
+  // narrow edge case NOT implemented here -- flagged rather than guessed.
+  if (taxableIncome <= 1200000) return 0;
+
+  let tax = 0;
+  let lastCap = 0;
+  for (const slab of NEW_REGIME_SLABS) {
+    if (taxableIncome > lastCap) {
+      const amountInSlab = Math.min(taxableIncome, slab.upTo) - lastCap;
+      tax += amountInSlab * slab.rate;
+      lastCap = slab.upTo;
+    }
+  }
+  const withCess = tax * 1.04; // 4% Health & Education Cess
+  return Math.round(withCess / 12);
+}
+
 function computeStatutoryDeductions(ctc: number, structure: any): StatutoryBreakdown {
   const basic = ctc * (Number(structure?.basic_pct ?? 0) / 100);
   const pfApplicable = !!structure?.pf_applicable;
@@ -279,6 +322,14 @@ function pillStyle(stage: string) {
 
       <!-- ================= ONBOARDING ================= -->
       <div *ngIf="activeTab === 'onboarding'" class="flex flex-col gap-3">
+        <div class="text-[11.5px] text-[#5f7689] bg-[#f7f9fb] border border-line-1 rounded-[9px] px-3 py-2">
+          <b class="text-[#22384a]">DPDP Act 2023 note:</b> this checklist collects Aadhaar, PAN, bank details, and
+          health screening data -- all "personal data" under the Digital Personal Data Protection Act. The DPDP
+          Rules were notified 13 Nov 2025; full substantive obligations (consent notices, breach reporting, data
+          principal rights) and penalties (up to ₹250 crore) take effect 13 May 2027 -- not yet actively enforced,
+          but this is the window to build consent capture and retention-limit practices ahead of that deadline,
+          not after it.
+        </div>
         <div class="flex justify-end">
           <button (click)="showNewOnboarding = true" class="bg-brand hover:bg-brand-hover text-white rounded-[9px] px-4 py-2 text-[12.5px] font-semibold">+ New Onboarding</button>
         </div>
@@ -475,7 +526,7 @@ function pillStyle(stage: string) {
             <div *ngIf="staffWithSalaryFor(r.employment_type).length === 0" class="text-[11px] text-muted-1">
               No staff with recorded monthly salary in this employment type yet -- add a salary via "+ New Staff" or onboarding conversion to see real PF/ESI figures here.
             </div>
-            <div *ngIf="staffWithSalaryFor(r.employment_type).length > 0" class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11.5px]">
+            <div *ngIf="staffWithSalaryFor(r.employment_type).length > 0" class="grid grid-cols-2 sm:grid-cols-5 gap-3 text-[11.5px]">
               <div>
                 <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Employee PF/mo</div>
                 <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).employeePF | number }}</div>
@@ -491,6 +542,10 @@ function pillStyle(stage: string) {
               <div>
                 <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Employer ESI/mo</div>
                 <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).employerESI | number }}</div>
+              </div>
+              <div>
+                <div class="text-[#8094a6] text-[10px] uppercase font-semibold">Est. TDS/mo (new regime, no declarations)</div>
+                <div class="font-mono font-semibold text-[#22384a]">₹{{ statutoryTotals(r).estimatedTDS | number }}</div>
               </div>
             </div>
             <div *ngIf="staffWithSalaryFor(r.employment_type).length > 0" class="text-[10.5px] text-muted-1 mt-1.5">
@@ -1205,17 +1260,18 @@ export class HrComponent implements OnDestroy {
   // Real aggregate across every staff member on record in this employment
   // type with a recorded salary -- each computed individually against
   // their own CTC (basic derived from this row's basic_pct), then summed.
-  statutoryTotals(r: any): { employeePF: number; employerTotal: number; employeeESI: number; employerESI: number } {
+  statutoryTotals(r: any): { employeePF: number; employerTotal: number; employeeESI: number; employerESI: number; estimatedTDS: number } {
     const staffList = this.staffWithSalaryFor(r.employment_type);
-    let employeePF = 0, employerTotal = 0, employeeESI = 0, employerESI = 0;
+    let employeePF = 0, employerTotal = 0, employeeESI = 0, employerESI = 0, estimatedTDS = 0;
     for (const s of staffList) {
       const d = computeStatutoryDeductions(Number(s.monthly_salary), r);
       employeePF += d.employeePF;
       employerTotal += d.employerEPS + d.employerEPF + d.employerEDLI;
       employeeESI += d.employeeESI;
       employerESI += d.employerESI;
+      estimatedTDS += estimateMonthlyTDS(Number(s.monthly_salary) * 12);
     }
-    return { employeePF, employerTotal, employeeESI, employerESI };
+    return { employeePF, employerTotal, employeeESI, employerESI, estimatedTDS };
   }
 
   async toggleStatutory(r: any, field: string) {
