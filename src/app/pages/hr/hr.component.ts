@@ -1166,6 +1166,23 @@ function pillStyle(stage: string) {
           <div><label class="block text-xs font-medium text-body-1 mb-1">Monthly salary (₹, optional)</label>
             <input type="number" min="0" [(ngModel)]="staffForm.monthly_salary" name="monthly_salary" placeholder="Needed for accurate exit settlements later"
               class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" /></div>
+
+          <!-- Live preview: shows exactly how this employee's pay will be
+               broken down the moment they're saved -- Basic/HRA/PF/ESI/PT/
+               Net Pay all derived from the Salary Structure policy for
+               their employment type, computed live as HR fills the form in. -->
+          <div *ngIf="staffForm.monthly_salary" class="bg-[#f7f9fb] rounded-[9px] p-3 text-[12px]">
+            <div class="text-[10px] font-bold tracking-[.4px] text-[#9aabbb] uppercase mb-1.5">
+              Preview -- {{ staffForm.employment_type }} structure applied
+            </div>
+            <div *ngFor="let line of newStaffPayPreview()" class="flex justify-between py-[3px]" [class]="line.bold ? 'border-t border-[#e2e8ee] mt-1 pt-1.5 font-semibold' : ''">
+              <span [class]="line.bold ? 'text-[#22384a]' : 'text-[#5f7689]'">{{ line.label }}</span>
+              <span class="font-mono" [class]="line.bold ? 'text-[#12303f]' : (line.value < 0 ? 'text-danger-fg' : 'text-[#3f566a]')">
+                {{ line.value < 0 ? '-' : '' }}₹{{ (line.value < 0 ? -line.value : line.value) | number }}
+              </span>
+            </div>
+          </div>
+
           <div *ngIf="errorMsg" class="text-xs text-danger-fg bg-danger-bg rounded-[9px] px-3 py-2">{{ errorMsg }}</div>
           <div class="flex gap-2 pt-1">
             <button type="button" (click)="showNewStaff = false" class="flex-1 border border-line-1 rounded-[9px] py-2 text-sm font-medium text-body-1">Cancel</button>
@@ -1484,6 +1501,38 @@ export class HrComponent implements OnDestroy {
   }
 
   // ---------- Staff ----------
+  // Live preview for the New Staff modal -- same computation the real
+  // Individual Employee Salary table uses, just run against the form's
+  // current (unsaved) values so HR sees the outcome before committing.
+  newStaffPayPreview(): { label: string; value: number; bold?: boolean }[] {
+    const ctc = Number(this.staffForm.monthly_salary) || 0;
+    const structure = this.salaryStructures.data().find((r: any) => r.employment_type === this.staffForm.employment_type);
+    if (!structure) {
+      return [{ label: 'No Salary Structure policy found for this employment type -- set one up in Salary Structure first.', value: 0 }];
+    }
+    const basic = Math.round(ctc * (Number(structure.basic_pct) / 100));
+    const hra = Math.round(basic * (Number(structure.hra_pct) / 100));
+    const npa = Math.round(basic * (Number(structure.npa_pct ?? 0) / 100));
+    const conveyance = Number(structure.conveyance) || 0;
+    const specialAllowance = Math.max(0, ctc - basic - hra - npa - conveyance);
+    const d = computeStatutoryDeductions(ctc, structure, null); // gender not yet captured at creation time
+    const totalDeductions = d.employeePF + d.employeeESI + d.professionalTax;
+
+    const lines: { label: string; value: number; bold?: boolean }[] = [
+      { label: 'Basic', value: basic },
+      { label: 'HRA', value: hra },
+    ];
+    if (npa > 0) lines.push({ label: 'NPA', value: npa });
+    lines.push({ label: 'Conveyance', value: conveyance });
+    lines.push({ label: 'Special Allowance', value: specialAllowance });
+    lines.push({ label: 'Gross (CTC)', value: ctc, bold: true });
+    if (d.employeePF > 0) lines.push({ label: 'Employee PF', value: -d.employeePF });
+    if (d.employeeESI > 0) lines.push({ label: 'Employee ESI', value: -d.employeeESI });
+    if (d.professionalTax > 0) lines.push({ label: 'Professional Tax (assumes Male -- set gender after creation for accuracy)', value: -d.professionalTax });
+    lines.push({ label: 'Estimated Net Pay', value: ctc - totalDeductions, bold: true });
+    return lines;
+  }
+
   async createStaff() {
     this.errorMsg = '';
     this.submitting = true;
@@ -2042,8 +2091,10 @@ export class HrComponent implements OnDestroy {
       totalPT += d.professionalTax;
       estTDS += estimateMonthlyTDS(Number(s.monthly_salary) * 12);
     }
+    const missingSalary = this.staff.data().filter((s: any) => s.monthly_salary == null).length;
     return [
       { label: 'Staff with Salary Data', value: String(allWithSalary.length), icon: 'ph-identification-badge', tintKey: 'blue' },
+      { label: 'Missing Salary Setup', value: String(missingSalary), icon: 'ph-warning', tintKey: missingSalary > 0 ? 'red' : 'green' },
       { label: 'Monthly Employer Liability', value: '\u20b9' + employerLiability.toLocaleString('en-IN'), icon: 'ph-buildings', tintKey: 'indigo' },
       { label: 'Monthly Employee Deductions (PF+ESI+PT)', value: '\u20b9' + (employeeDeductions + totalPT).toLocaleString('en-IN'), icon: 'ph-arrow-circle-down', tintKey: 'amber' },
       { label: 'Est. Monthly TDS (all staff)', value: '\u20b9' + estTDS.toLocaleString('en-IN'), icon: 'ph-receipt', tintKey: 'teal' },
