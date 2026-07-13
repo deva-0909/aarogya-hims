@@ -9,7 +9,7 @@ import { PrintLetterheadComponent } from '../../shared/print-letterhead.componen
 type HrTab = 'directory' | 'onboarding' | 'exit' | 'salary' | 'letters' | 'orgchart' | 'loans' | 'grievance';
 
 const LEAVE_TYPES = ['Casual', 'Sick', 'Earned', 'Maternity/Paternity', 'Unpaid'];
-const EMPLOYMENT_TYPES = ['Permanent', 'Contract', 'Probation', 'Intern'];
+const EMPLOYMENT_TYPES = ['Permanent', 'Medical Officer', 'Contract', 'Consultant', 'Intern'];
 const LOAN_TYPES = ['Personal Loan', 'Salary Advance', 'Medical Advance', 'Festival Advance'];
 const LETTER_TYPES = ['Offer Letter', 'Appointment Letter', 'Relieving Letter', 'Experience Letter', 'Salary Certificate'];
 const GRIEVANCE_CATEGORIES = ['Workplace Conduct', 'Compensation', 'Facilities', 'Harassment', 'Discrimination', 'Other'];
@@ -315,6 +315,20 @@ function pillStyle(stage: string) {
         <div *ngFor="let r of salaryStructures.data()" class="px-[18px] py-[14px] border-b border-[#f1f4f8] last:border-0">
           <div class="flex items-center justify-between gap-2 flex-wrap">
             <div class="font-semibold text-[14px] text-[#22384a]">{{ r.employment_type }}</div>
+          </div>
+          <div *ngIf="r.employment_type === 'Consultant'" class="mt-2 mb-1 text-[11.5px] text-warning-fg bg-warning-bg rounded-[8px] px-[11px] py-[8px] flex items-start gap-2">
+            <i class="ph ph-warning mt-0.5 flex-none"></i>
+            <span>
+              Paid as <b>Professional Fees</b>, not payroll salary. TDS deducted under Section 194J (10%), not
+              Section 192 (salary slab rates) -- must use a separate ledger/challan from employee salary.
+              Combining consultant fees with salary in the same TDS challan is a common, avoidable compliance error.
+            </span>
+          </div>
+          <div *ngIf="r.employment_type === 'Medical Officer'" class="mt-2 mb-1 text-[11.5px] text-[#5f7689] bg-[#f7f9fb] rounded-[8px] px-[11px] py-[8px]">
+            NPA (Non-Practicing Allowance) applies to salaried doctors who forgo private practice -- counted as
+            Pay for DA and retirement benefits, but excluded from the HRA calculation base.
+          </div>
+          <div class="flex items-center justify-end gap-2 flex-wrap">
             <div class="flex gap-[6px] flex-wrap">
               <button (click)="toggleStatutory(r, 'pf_applicable')" class="rounded-pill px-[11px] py-1 text-[10.5px] font-semibold"
                 [style.background]="r.pf_applicable ? '#dff1ef' : '#eef2f6'" [style.color]="r.pf_applicable ? '#0b7d72' : '#8094a6'">PF: {{ r.pf_applicable ? 'Yes' : 'No' }}</button>
@@ -475,6 +489,9 @@ function pillStyle(stage: string) {
               <option value="">— none —</option>
               <option *ngFor="let s of staff.data()" [value]="s.id">{{ s.full_name }} — {{ s.title }}</option>
             </select></div>
+          <div><label class="block text-xs font-medium text-body-1 mb-1">Monthly salary (₹, optional)</label>
+            <input type="number" min="0" [(ngModel)]="staffForm.monthly_salary" name="monthly_salary" placeholder="Needed for accurate exit settlements later"
+              class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" /></div>
           <div *ngIf="errorMsg" class="text-xs text-danger-fg bg-danger-bg rounded-[9px] px-3 py-2">{{ errorMsg }}</div>
           <div class="flex gap-2 pt-1">
             <button type="button" (click)="showNewStaff = false" class="flex-1 border border-line-1 rounded-[9px] py-2 text-sm font-medium text-body-1">Cancel</button>
@@ -664,7 +681,7 @@ export class HrComponent implements OnDestroy {
   printingLetter: any = null;
 
   leaveForm = { staff_id: '', leave_type: LEAVE_TYPES[0], start_date: '', end_date: '' };
-  staffForm = { full_name: '', title: '', role: '', department: '', phone: '', email: '', employment_type: EMPLOYMENT_TYPES[0], date_of_joining: '', reporting_manager_id: '' };
+  staffForm = { full_name: '', title: '', role: '', department: '', phone: '', email: '', employment_type: EMPLOYMENT_TYPES[0], date_of_joining: '', reporting_manager_id: '', monthly_salary: '' };
   onboardForm = { name: '', position: '', dept: '', join_date: '', employment_type: EMPLOYMENT_TYPES[0], monthly_rate: '' };
   exitForm = { staff_id: '', notice_date: '', last_day: '', reason: '' };
   letterForm = { staff_id: '', letter_type: LETTER_TYPES[0], details: '' };
@@ -745,11 +762,12 @@ export class HrComponent implements OnDestroy {
         department: this.staffForm.department, phone: this.staffForm.phone, email: this.staffForm.email,
         employment_type: this.staffForm.employment_type, date_of_joining: this.staffForm.date_of_joining || null,
         reporting_manager_id: this.staffForm.reporting_manager_id || null,
+        monthly_salary: this.staffForm.monthly_salary ? Number(this.staffForm.monthly_salary) : null,
         employee_id: 'EMP-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
       });
       if (error) throw error;
       this.showNewStaff = false;
-      this.staffForm = { full_name: '', title: '', role: '', department: '', phone: '', email: '', employment_type: EMPLOYMENT_TYPES[0], date_of_joining: '', reporting_manager_id: '' };
+      this.staffForm = { full_name: '', title: '', role: '', department: '', phone: '', email: '', employment_type: EMPLOYMENT_TYPES[0], date_of_joining: '', reporting_manager_id: '', monthly_salary: '' };
       await this.staff.refresh();
     } catch (err: any) {
       this.errorMsg = err.message;
@@ -809,7 +827,7 @@ export class HrComponent implements OnDestroy {
   async convertToStaff(o: any) {
     const { error } = await this.supabaseService.client.from('staff_directory').insert({
       full_name: o.name, title: o.position, role: o.position, department: o.dept,
-      employment_type: o.employment_type, date_of_joining: o.join_date,
+      employment_type: o.employment_type, date_of_joining: o.join_date, monthly_salary: o.monthly_rate,
       employee_id: 'EMP-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
     });
     if (error) {
@@ -858,15 +876,36 @@ export class HrComponent implements OnDestroy {
   }
 
   async openSettlement(e: any) {
-    // Simple, transparent computation from the last known monthly rate on
-    // staff_directory if available -- otherwise a manual placeholder the
-    // user can edit directly in Supabase. This keeps the demo honest
-    // rather than fabricating a payroll engine.
+    const staffMember = this.staff.data().find((s: any) => s.id === e.staff_id);
+    const monthlySalary = Number(staffMember?.monthly_salary) || 0;
+    const salaryStructure = this.salaryStructures.data().find((r: any) => r.employment_type === e.employment_type);
+
+    // Notice period pay: real calculation from actual notice_date -> last_day gap.
+    const noticeDays = e.notice_date && e.last_day
+      ? Math.max(0, Math.round((new Date(e.last_day).getTime() - new Date(e.notice_date).getTime()) / 86400000))
+      : 0;
+    const noticePay = Math.round((monthlySalary / 30) * noticeDays);
+
+    // Gratuity, per the Payment of Gratuity Act 1972: 15/26 x last drawn
+    // monthly salary x years of service, only payable after 5 years of
+    // continuous service, and only where this employment type is
+    // statutorily eligible (matches the Salary Structure tab's toggle).
+    const yearsOfService = staffMember?.date_of_joining && e.last_day
+      ? (new Date(e.last_day).getTime() - new Date(staffMember.date_of_joining).getTime()) / (365.25 * 86400000)
+      : 0;
+    const gratuityEligible = salaryStructure?.gratuity_applicable && yearsOfService >= 5;
+    const gratuity = gratuityEligible ? Math.round((15 / 26) * monthlySalary * yearsOfService) : 0;
+
     const settlement = [
-      { label: 'Notice period pay', value: 0 },
-      { label: 'Leave encashment', value: 0 },
-      { label: 'Gratuity (if eligible)', value: 0 },
-      { label: 'Deductions', value: 0 },
+      { label: `Notice period pay (${noticeDays}d)`, value: noticePay },
+      { label: 'Leave encashment (enter manually -- not tracked)', value: 0 },
+      {
+        label: gratuityEligible
+          ? `Gratuity (${yearsOfService.toFixed(1)}y service, 15/26 x salary x years)`
+          : `Gratuity (not eligible -- ${yearsOfService.toFixed(1)}y service, needs 5y+)`,
+        value: gratuity,
+      },
+      { label: 'Deductions (enter manually)', value: 0 },
     ];
     await this.supabaseService.client.from('hr_exits').update({ settlement }).eq('id', e.id);
     await this.exits.refresh();
