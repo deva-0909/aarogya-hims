@@ -219,9 +219,13 @@ function pillStyle(stage: string) {
       <div *ngIf="activeTab === 'directory'">
         <div class="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-6">
           <div class="xl:col-span-2 bg-white border border-line-1 rounded-card overflow-hidden">
-            <div class="px-5 py-3 border-b border-line-1 font-semibold text-ink-2 text-sm flex items-center justify-between">
-              <span>Staff Directory ({{ staff.data().length }})</span>
+            <div class="px-5 py-3 border-b border-line-1 font-semibold text-ink-2 text-sm flex items-center justify-between gap-2 flex-wrap">
+              <span>Staff Directory ({{ filteredStaff().length }}{{ staffSearch ? ' of ' + staff.data().length : '' }})</span>
               <button (click)="showNewStaff = true" class="bg-brand hover:bg-brand-hover text-white rounded-[7px] px-3 py-1.5 text-[11.5px] font-semibold">+ New Staff</button>
+            </div>
+            <div class="px-5 py-2.5 border-b border-line-1">
+              <input [(ngModel)]="staffSearch" name="staffSearch" placeholder="Search by name, title, department, or employee ID…"
+                class="w-full border border-line-1 rounded-[9px] px-3 py-1.5 text-[12.5px] outline-none focus:border-brand" />
             </div>
             <div class="overflow-x-auto"><table class="w-full text-sm">
               <thead>
@@ -232,10 +236,14 @@ function pillStyle(stage: string) {
                   <th class="px-4 py-2 font-medium">Type</th>
                   <th class="px-4 py-2 font-medium">Joined</th>
                   <th class="px-4 py-2 font-medium">Status</th>
+                  <th class="px-4 py-2 font-medium"></th>
                 </tr>
               </thead>
               <tbody>
-                <tr *ngFor="let s of staff.data()" class="border-b border-line-2 last:border-0">
+                <tr *ngIf="filteredStaff().length === 0">
+                  <td colspan="7" class="px-4 py-6 text-center text-body-2">No staff match "{{ staffSearch }}".</td>
+                </tr>
+                <tr *ngFor="let s of filteredStaff()" class="border-b border-line-2 last:border-0">
                   <td class="px-4 py-2 font-mono text-[11.5px] text-brand">{{ s.employee_id || '—' }}</td>
                   <td class="px-4 py-2">
                     <div class="font-medium text-ink-2">{{ s.full_name }}</div>
@@ -252,6 +260,9 @@ function pillStyle(stage: string) {
                       [class]="s.status === 'Inactive' ? 'bg-line-2 text-body-2' : 'bg-success-bg text-success-fg'">
                       {{ s.status || 'Active' }}
                     </span>
+                  </td>
+                  <td class="px-4 py-2 text-right">
+                    <button (click)="openProfile(s)" class="text-[12px] font-semibold text-brand hover:underline whitespace-nowrap">View Profile</button>
                   </td>
                 </tr>
               </tbody>
@@ -900,6 +911,13 @@ function pillStyle(stage: string) {
               class="bg-danger-fg hover:opacity-90 text-white rounded-[9px] px-4 py-2 text-[12.5px] font-semibold">
               <i class="ph ph-lock-key"></i> Lock Payroll
             </button>
+            <button *ngIf="currentPayrollRun()?.status === 'Locked'" (click)="unlockPayroll()"
+              class="border border-danger-fg text-danger-fg bg-white hover:bg-danger-bg rounded-[9px] px-4 py-2 text-[12.5px] font-semibold">
+              <i class="ph ph-lock-key-open"></i> Unlock (requires reason)
+            </button>
+          </div>
+          <div *ngIf="currentPayrollRun()?.unlock_reason" class="mt-3 text-[11.5px] text-warning-fg bg-warning-bg rounded-[8px] px-3 py-2">
+            <b>Previously unlocked</b> ({{ currentPayrollRun().unlocked_at | date: 'medium' }}): "{{ currentPayrollRun().unlock_reason }}"
           </div>
         </div>
 
@@ -1191,6 +1209,89 @@ function pillStyle(stage: string) {
         </form>
       </div>
 
+      <!-- Employee 360 Profile: consolidates Directory, Salary, Attendance,
+           Leave, Loans, and Credential status for one person -- previously
+           required visiting 6+ separate tabs to piece together. -->
+      <div *ngIf="profileStaff as p" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" (click)="closeProfile()">
+        <div (click)="$event.stopPropagation()" class="bg-white rounded-card w-full max-w-2xl max-h-[88vh] overflow-y-auto">
+          <div class="px-6 py-5 border-b border-line-1 flex items-start justify-between sticky top-0 bg-white z-10">
+            <div>
+              <h2 class="font-bold text-ink-2 text-[17px]">{{ p.full_name }}</h2>
+              <div class="text-[12.5px] text-muted-1 mt-0.5">{{ p.title }} · {{ p.department }} · {{ p.employee_id || 'No ID' }}</div>
+            </div>
+            <button (click)="closeProfile()" class="text-muted-1 hover:text-body-1 text-xl leading-none">×</button>
+          </div>
+
+          <div class="p-6 space-y-5">
+            <!-- Employment -->
+            <div>
+              <div class="text-[10px] font-bold tracking-[.5px] text-[#9aabbb] uppercase mb-2">Employment</div>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[12.5px]">
+                <div><div class="text-muted-1 text-[10.5px]">Type</div><div class="font-medium text-body-1">{{ p.employment_type || '—' }}</div></div>
+                <div><div class="text-muted-1 text-[10.5px]">Joined</div><div class="font-medium text-body-1 font-mono">{{ p.date_of_joining || '—' }}</div></div>
+                <div><div class="text-muted-1 text-[10.5px]">Status</div><div class="font-medium text-body-1">{{ p.status || 'Active' }}</div></div>
+                <div><div class="text-muted-1 text-[10.5px]">Reports To</div><div class="font-medium text-body-1">{{ p.reporting_manager_id ? staffNameFor(p.reporting_manager_id) : 'Top of hierarchy' }}</div></div>
+                <div><div class="text-muted-1 text-[10.5px]">Phone</div><div class="font-medium text-body-1">{{ p.phone || '—' }}</div></div>
+                <div><div class="text-muted-1 text-[10.5px]">Email</div><div class="font-medium text-body-1">{{ p.email || '—' }}</div></div>
+              </div>
+            </div>
+
+            <!-- Pay -->
+            <div class="pt-3 border-t border-line-2">
+              <div class="text-[10px] font-bold tracking-[.5px] text-[#9aabbb] uppercase mb-2">Pay &amp; Statutory IDs</div>
+              <div *ngIf="p.monthly_salary == null" class="text-[12px] text-warning-fg bg-warning-bg rounded-[8px] px-3 py-2">No salary configured yet.</div>
+              <div *ngIf="p.monthly_salary != null" class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[12.5px]">
+                <div><div class="text-muted-1 text-[10.5px]">Monthly CTC</div><div class="font-mono font-semibold text-ink-2">₹{{ p.monthly_salary | number }}</div></div>
+                <div><div class="text-muted-1 text-[10.5px]">Net Pay</div><div class="font-mono font-semibold text-success-fg">₹{{ netPayFor(p) | number }}</div></div>
+                <div><div class="text-muted-1 text-[10.5px]">PF UAN</div><div class="font-mono text-body-1">{{ p.pf_uan || '—' }}</div></div>
+                <div><div class="text-muted-1 text-[10.5px]">ESI No.</div><div class="font-mono text-body-1">{{ p.esi_number || '—' }}</div></div>
+                <div><div class="text-muted-1 text-[10.5px]">Bank A/C</div><div class="font-mono text-body-1">{{ maskAccount(p.bank_account_number) }}</div></div>
+                <div><div class="text-muted-1 text-[10.5px]">Gender</div><div class="font-medium text-body-1">{{ p.gender || '—' }}</div></div>
+              </div>
+            </div>
+
+            <!-- Attendance this month -->
+            <div class="pt-3 border-t border-line-2">
+              <div class="text-[10px] font-bold tracking-[.5px] text-[#9aabbb] uppercase mb-2">Attendance -- {{ currentPeriod() }}</div>
+              <div class="text-[12.5px] text-body-1">
+                <span class="font-mono font-semibold text-ink-2">{{ profileAttendanceThisMonth(p.id).present }}</span>
+                of <span class="font-mono">{{ profileAttendanceThisMonth(p.id).totalDays }}</span> days present
+              </div>
+            </div>
+
+            <!-- Leave balances -->
+            <div class="pt-3 border-t border-line-2">
+              <div class="text-[10px] font-bold tracking-[.5px] text-[#9aabbb] uppercase mb-2">Leave Balances</div>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[12px]">
+                <div *ngFor="let lb of profileLeaveBalances(p.id)" class="border border-line-1 rounded-[8px] px-2.5 py-1.5">
+                  <div class="text-muted-1 text-[10.5px]">{{ lb.type }}</div>
+                  <div class="font-mono font-semibold text-body-1">{{ lb.used }}{{ lb.entitlement != null ? ' / ' + lb.entitlement : '' }}</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Active loans -->
+            <div *ngIf="profileActiveLoans(p.id).length > 0" class="pt-3 border-t border-line-2">
+              <div class="text-[10px] font-bold tracking-[.5px] text-[#9aabbb] uppercase mb-2">Active Loans</div>
+              <div *ngFor="let l of profileActiveLoans(p.id)" class="flex justify-between text-[12.5px] py-1">
+                <span class="text-body-1">{{ l.loan_type }} -- {{ l.stage }}</span>
+                <span class="font-mono font-semibold text-ink-2">₹{{ l.outstanding | number }} outstanding</span>
+              </div>
+            </div>
+
+            <!-- Credential status -->
+            <div *ngIf="profileCredential(p.id) as cred" class="pt-3 border-t border-line-2">
+              <div class="text-[10px] font-bold tracking-[.5px] text-[#9aabbb] uppercase mb-2">Clinical Credential</div>
+              <div class="flex items-center gap-2 text-[12.5px]">
+                <span class="text-body-1">Medical Council registration expires {{ cred.credential_expiry }}</span>
+                <span *ngIf="credentialAlert(cred.credential_expiry) as alert" class="px-2 py-0.5 rounded-pill text-[10.5px] font-semibold"
+                  [style.background]="alert.bg" [style.color]="alert.fg">{{ alert.text }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- New Onboarding -->
       <div *ngIf="showNewOnboarding" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" (click)="showNewOnboarding = false">
         <form (ngSubmit)="createOnboarding()" (click)="$event.stopPropagation()" class="bg-white rounded-card p-5 w-full max-w-sm space-y-3">
@@ -1366,6 +1467,8 @@ export class HrComponent implements OnDestroy {
   errorMsg = '';
 
   showNewStaff = false;
+  staffSearch = '';
+  profileStaff: any = null;
   showNewOnboarding = false;
   showNewExit = false;
   showNewLetter = false;
@@ -1531,6 +1634,65 @@ export class HrComponent implements OnDestroy {
     if (d.professionalTax > 0) lines.push({ label: 'Professional Tax (assumes Male -- set gender after creation for accuracy)', value: -d.professionalTax });
     lines.push({ label: 'Estimated Net Pay', value: ctc - totalDeductions, bold: true });
     return lines;
+  }
+
+  filteredStaff() {
+    const q = this.staffSearch.trim().toLowerCase();
+    if (!q) return this.staff.data();
+    return this.staff.data().filter((s: any) =>
+      (s.full_name ?? '').toLowerCase().includes(q) ||
+      (s.title ?? '').toLowerCase().includes(q) ||
+      (s.department ?? '').toLowerCase().includes(q) ||
+      (s.employee_id ?? '').toLowerCase().includes(q)
+    );
+  }
+
+  openProfile(s: any) {
+    this.profileStaff = s;
+  }
+
+  closeProfile() {
+    this.profileStaff = null;
+  }
+
+  // ================= EMPLOYEE 360 PROFILE =================
+  // Consolidates what was previously scattered across 6+ separate tabs --
+  // personal/employment info, pay breakdown, this month's attendance,
+  // leave balances, active loans, and credential status all in one place.
+  profileAttendanceThisMonth(staffId: string): { present: number; totalDays: number } {
+    const period = this.currentPeriod();
+    const present = this.attendance.data().filter((a: any) => a.staff_id === staffId && (a.attendance_date ?? '').startsWith(period)).length;
+    const now = new Date();
+    const totalDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    return { present, totalDays };
+  }
+
+  profileLeaveBalances(staffId: string): { type: string; used: number; entitlement: number | null }[] {
+    const yearStart = new Date().getFullYear() + '-01-01';
+    return LEAVE_TYPES.map((type) => {
+      let entitlement = LEAVE_ENTITLEMENTS[type];
+      if (type === 'Earned') {
+        const presentDays = this.presentDaysThisYear(staffId);
+        if (presentDays > 0) entitlement = Math.floor(presentDays / 20);
+      }
+      const used = this.leaves.data()
+        .filter((l: any) => l.staff_id === staffId && l.leave_type === type && l.status !== 'Rejected' && (l.start_date ?? '') >= yearStart)
+        .reduce((sum: number, l: any) => sum + Math.max(0, Math.round((new Date(l.end_date).getTime() - new Date(l.start_date).getTime()) / 86400000) + 1), 0);
+      return { type, used, entitlement };
+    });
+  }
+
+  profileActiveLoans(staffId: string) {
+    return this.loans.data().filter((l: any) => l.staff_id === staffId && l.stage !== 'Closed');
+  }
+
+  profileCredential(staffId: string): any {
+    return this.onboarding.data().find((o: any) => o.staff_id === staffId && o.credential_expiry) ?? null;
+  }
+
+  maskAccount(acct: string | null): string {
+    if (!acct) return '—';
+    return acct.length > 4 ? '••••' + acct.slice(-4) : acct;
   }
 
   async createStaff() {
@@ -1826,6 +1988,26 @@ export class HrComponent implements OnDestroy {
     if (!run) return;
     if (!confirm('Lock payroll for this period? Salary edits will be blocked until the next monthly cycle.')) return;
     await this.supabaseService.client.from('hr_payroll_runs').update({ status: 'Locked', locked_at: new Date().toISOString() }).eq('id', run.id);
+    await this.payrollRuns.refresh();
+  }
+
+  // A one-way lock with no correction path is a real design flaw, not a
+  // safety feature -- genuine data-entry errors happen after locking, and
+  // real payroll software always provides an audit-logged unlock route.
+  // Returns to 'Validated' (not all the way back to 'Draft'), preserving
+  // the prior validation, and requires a reason -- forcing a deliberate,
+  // traceable action rather than a silent bypass.
+  async unlockPayroll() {
+    const run = this.currentPayrollRun();
+    if (!run) return;
+    const reason = prompt('Reason for unlocking this payroll period (required, will be logged):');
+    if (!reason || !reason.trim()) {
+      if (reason !== null) alert('A reason is required to unlock payroll.');
+      return;
+    }
+    await this.supabaseService.client.from('hr_payroll_runs').update({
+      status: 'Validated', unlock_reason: reason, unlocked_at: new Date().toISOString(),
+    }).eq('id', run.id);
     await this.payrollRuns.refresh();
   }
 
