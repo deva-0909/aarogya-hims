@@ -7,7 +7,7 @@ import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 import { PrintLetterheadComponent } from '../../shared/print-letterhead.component';
 import { AttendanceCaptureComponent, AttendanceCapture } from '../../shared/attendance-capture.component';
 
-type HrTab = 'dashboard' | 'directory' | 'attendance' | 'roster' | 'onboarding' | 'exit' | 'salary' | 'payroll' | 'revshare' | 'training' | 'letters' | 'orgchart' | 'loans' | 'grievance';
+type HrTab = 'dashboard' | 'recruitment' | 'directory' | 'attendance' | 'roster' | 'onboarding' | 'exit' | 'salary' | 'payroll' | 'revshare' | 'training' | 'letters' | 'orgchart' | 'loans' | 'grievance';
 
 const LEAVE_TYPES = ['Casual', 'Sick', 'Earned', 'Maternity/Paternity', 'Unpaid'];
 
@@ -312,6 +312,119 @@ function pillStyle(stage: string) {
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- ================= RECRUITMENT ================= -->
+      <div *ngIf="activeTab === 'recruitment'" class="flex flex-col gap-3">
+        <div class="flex justify-end">
+          <button (click)="showNewRequisition = true" class="bg-brand hover:bg-brand-hover text-white rounded-[9px] px-4 py-2 text-[12.5px] font-semibold">+ New Requisition</button>
+        </div>
+        <div *ngIf="jobRequisitions.data().length === 0" class="text-center text-body-2 text-sm py-8 bg-white border border-line-1 rounded-card">No job requisitions yet.</div>
+        <div *ngFor="let req of jobRequisitions.data()" class="bg-white border border-line-1 rounded-card p-4">
+          <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+            <div>
+              <div class="font-semibold text-ink-2 text-[14px]">{{ req.position_title }}</div>
+              <div class="text-[11.5px] text-muted-1">{{ req.department }} · {{ req.employment_type }} · {{ req.openings }} opening(s) · {{ req.reason }}</div>
+            </div>
+            <span class="px-2 py-0.5 rounded-pill text-[11px] font-semibold"
+              [class]="req.status === 'Filled' ? 'bg-success-bg text-success-fg' : req.status === 'Cancelled' ? 'bg-line-2 text-body-2' : 'bg-warning-bg text-warning-fg'">
+              {{ req.status }}
+            </span>
+          </div>
+
+          <div class="pt-2 border-t border-line-2">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[10.5px] font-bold tracking-[.4px] text-muted-1 uppercase">Candidates</span>
+              <button (click)="openCandidateForm(req.id)" class="text-[11.5px] font-semibold text-brand hover:underline">+ Add Candidate</button>
+            </div>
+            <div *ngIf="candidatesFor(req.id).length === 0" class="text-[11.5px] text-muted-1 py-2">No candidates yet.</div>
+            <div *ngFor="let c of candidatesFor(req.id)" class="flex items-center gap-2 py-1.5 border-b border-line-2 last:border-0 flex-wrap">
+              <div class="flex-1 min-w-[140px]">
+                <div class="text-[12.5px] font-medium text-ink-2">{{ c.full_name }}</div>
+                <div class="text-[10.5px] text-muted-1">{{ c.phone }}{{ c.interview_date ? ' · Interview ' + c.interview_date : '' }}</div>
+              </div>
+              <span class="px-2 py-0.5 rounded-pill text-[10.5px] font-semibold bg-[#eef2f6] text-[#5f7689]">{{ c.stage }}</span>
+              <button *ngIf="candidateNextStage(c.stage) && c.stage !== 'Accepted'" (click)="advanceCandidate(c)"
+                class="text-[11px] font-semibold text-brand hover:underline">{{ candidateNextStage(c.stage) }}</button>
+              <button *ngIf="c.stage !== 'Rejected' && c.stage !== 'Accepted'" (click)="rejectCandidate(c)" class="text-[11px] font-semibold text-danger-fg hover:underline">Reject</button>
+              <button *ngIf="c.stage === 'Accepted' && !c.converted_to_onboarding" (click)="convertCandidateToOnboarding(c, req)"
+                class="text-[11px] font-semibold text-success-fg hover:underline">Send to Onboarding →</button>
+              <span *ngIf="c.converted_to_onboarding" class="text-[11px] text-success-fg font-semibold">✓ In Onboarding</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- New Requisition modal -->
+      <div *ngIf="showNewRequisition" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" (click)="showNewRequisition = false">
+        <form (ngSubmit)="createRequisition()" (click)="$event.stopPropagation()" class="bg-white rounded-card p-5 w-full max-w-sm space-y-3">
+          <h3 class="font-semibold text-ink-2">New Job Requisition</h3>
+          <div>
+            <label class="block text-xs font-medium text-body-1 mb-1">Position title</label>
+            <input required [(ngModel)]="requisitionForm.position_title" name="position_title" class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs font-medium text-body-1 mb-1">Department</label>
+              <input required [(ngModel)]="requisitionForm.department" name="department" class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-body-1 mb-1">Employment type</label>
+              <select [(ngModel)]="requisitionForm.employment_type" name="employment_type" class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand">
+                <option *ngFor="let t of employmentTypes" [value]="t">{{ t }}</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs font-medium text-body-1 mb-1">Openings</label>
+              <input required type="number" min="1" [(ngModel)]="requisitionForm.openings" name="openings" class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-body-1 mb-1">Reason</label>
+              <select [(ngModel)]="requisitionForm.reason" name="reason" class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand">
+                <option>New Position</option>
+                <option>Replacement</option>
+                <option>Expansion</option>
+              </select>
+            </div>
+          </div>
+          <div *ngIf="errorMsg" class="text-xs text-danger-fg bg-danger-bg rounded-[9px] px-3 py-2">{{ errorMsg }}</div>
+          <div class="flex gap-2 pt-1">
+            <button type="button" (click)="showNewRequisition = false" class="flex-1 border border-line-1 rounded-[9px] py-2 text-sm font-medium text-body-1">Cancel</button>
+            <button type="submit" [disabled]="submitting" class="flex-1 bg-brand hover:bg-brand-hover text-white rounded-[9px] py-2 text-sm font-semibold disabled:opacity-60">
+              {{ submitting ? 'Creating…' : 'Create' }}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Add Candidate modal -->
+      <div *ngIf="candidateFormReqId" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" (click)="candidateFormReqId = null">
+        <form (ngSubmit)="createCandidate()" (click)="$event.stopPropagation()" class="bg-white rounded-card p-5 w-full max-w-sm space-y-3">
+          <h3 class="font-semibold text-ink-2">Add Candidate</h3>
+          <div>
+            <label class="block text-xs font-medium text-body-1 mb-1">Full name</label>
+            <input required [(ngModel)]="candidateForm.full_name" name="full_name" class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs font-medium text-body-1 mb-1">Phone</label>
+              <input [(ngModel)]="candidateForm.phone" name="phone" class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-body-1 mb-1">Email</label>
+              <input [(ngModel)]="candidateForm.email" name="email" class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
+            </div>
+          </div>
+          <div *ngIf="errorMsg" class="text-xs text-danger-fg bg-danger-bg rounded-[9px] px-3 py-2">{{ errorMsg }}</div>
+          <div class="flex gap-2 pt-1">
+            <button type="button" (click)="candidateFormReqId = null" class="flex-1 border border-line-1 rounded-[9px] py-2 text-sm font-medium text-body-1">Cancel</button>
+            <button type="submit" [disabled]="submitting" class="flex-1 bg-brand hover:bg-brand-hover text-white rounded-[9px] py-2 text-sm font-semibold disabled:opacity-60">
+              {{ submitting ? 'Adding…' : 'Add' }}
+            </button>
+          </div>
+        </form>
       </div>
 
       <!-- ================= DIRECTORY ================= -->
@@ -1845,6 +1958,7 @@ export class HrComponent implements OnDestroy {
   activeTab: HrTab = 'dashboard';
   tabs: { key: HrTab; label: string; icon: string }[] = [
     { key: 'dashboard', label: 'Dashboard', icon: 'ph-gauge' },
+    { key: 'recruitment', label: 'Recruitment', icon: 'ph-briefcase' },
     { key: 'directory', label: 'Directory & Leave', icon: 'ph-users-three' },
     { key: 'attendance', label: 'Attendance', icon: 'ph-fingerprint' },
     { key: 'roster', label: 'Duty Roster', icon: 'ph-calendar-check' },
@@ -1867,6 +1981,10 @@ export class HrComponent implements OnDestroy {
   staffSearch = '';
   profileStaff: any = null;
   showNewOnboarding = false;
+  showNewRequisition = false;
+  requisitionForm = { position_title: '', department: '', employment_type: EMPLOYMENT_TYPES[0], openings: '1', reason: 'New Position' };
+  candidateFormReqId: string | null = null;
+  candidateForm = { full_name: '', phone: '', email: '' };
   showNewTraining = false;
   trainingForm = { staff_id: '', training_type: TRAINING_TYPES[0], hours: '', completed_date: '', expiry_date: '' };
   trainingTypes = TRAINING_TYPES;
@@ -1900,6 +2018,8 @@ export class HrComponent implements OnDestroy {
   doctorRevenueShare: RealtimeTableHandle<any>;
   invoicesForRevShare: RealtimeTableHandle<any>;
   trainingRecords: RealtimeTableHandle<any>;
+  jobRequisitions: RealtimeTableHandle<any>;
+  candidates: RealtimeTableHandle<any>;
   statutoryRegistrations: RealtimeTableHandle<any>;
   payrollRuns: RealtimeTableHandle<any>;
   complianceFilings: RealtimeTableHandle<any>;
@@ -1919,6 +2039,8 @@ export class HrComponent implements OnDestroy {
     this.doctorRevenueShare = this.realtime.watch('hr_doctor_revenue_share');
     this.invoicesForRevShare = this.realtime.watch('invoices', (q) => q.order('created_at', { ascending: false }));
     this.trainingRecords = this.realtime.watch('hr_training_records', (q) => q.order('completed_date', { ascending: false }));
+    this.jobRequisitions = this.realtime.watch('hr_job_requisitions', (q) => q.order('created_at', { ascending: false }));
+    this.candidates = this.realtime.watch('hr_candidates', (q) => q.order('created_at', { ascending: false }));
     this.statutoryRegistrations = this.realtime.watch('hr_statutory_registrations');
     this.payrollRuns = this.realtime.watch('hr_payroll_runs', (q) => q.order('period', { ascending: false }));
     this.complianceFilings = this.realtime.watch('hr_compliance_filings', (q) => q.order('due_date'));
@@ -3336,6 +3458,117 @@ export class HrComponent implements OnDestroy {
     return counts.map((c) => ({ ...c, pct: Math.round((c.count / max) * 100) }));
   }
 
+  // ================= RECRUITMENT =================
+  candidatesFor(requisitionId: string) {
+    return this.candidates.data().filter((c: any) => c.requisition_id === requisitionId);
+  }
+
+  candidateNextStage(stage: string): string | null {
+    const flow: Record<string, string> = {
+      Applied: 'Screening',
+      Screening: 'Interview Scheduled',
+      'Interview Scheduled': 'Interviewed',
+      Interviewed: 'Offer Extended',
+      'Offer Extended': 'Accepted',
+    };
+    return flow[stage] ?? null;
+  }
+
+  async createRequisition() {
+    this.errorMsg = '';
+    this.submitting = true;
+    try {
+      const { error } = await this.supabaseService.client.from('hr_job_requisitions').insert({
+        position_title: this.requisitionForm.position_title,
+        department: this.requisitionForm.department,
+        employment_type: this.requisitionForm.employment_type,
+        openings: Number(this.requisitionForm.openings) || 1,
+        reason: this.requisitionForm.reason,
+        status: 'Open',
+      });
+      if (error) throw error;
+      this.showNewRequisition = false;
+      this.requisitionForm = { position_title: '', department: '', employment_type: EMPLOYMENT_TYPES[0], openings: '1', reason: 'New Position' };
+      await this.jobRequisitions.refresh();
+    } catch (err: any) {
+      this.errorMsg = err.message;
+    } finally {
+      this.submitting = false;
+    }
+  }
+
+  openCandidateForm(requisitionId: string) {
+    this.candidateFormReqId = requisitionId;
+    this.candidateForm = { full_name: '', phone: '', email: '' };
+    this.errorMsg = '';
+  }
+
+  async createCandidate() {
+    if (!this.candidateFormReqId) return;
+    this.errorMsg = '';
+    this.submitting = true;
+    try {
+      const { error } = await this.supabaseService.client.from('hr_candidates').insert({
+        requisition_id: this.candidateFormReqId,
+        full_name: this.candidateForm.full_name,
+        phone: this.candidateForm.phone,
+        email: this.candidateForm.email,
+        stage: 'Applied',
+      });
+      if (error) throw error;
+      this.candidateFormReqId = null;
+      await this.candidates.refresh();
+    } catch (err: any) {
+      this.errorMsg = err.message;
+    } finally {
+      this.submitting = false;
+    }
+  }
+
+  async advanceCandidate(c: any) {
+    const next = this.candidateNextStage(c.stage);
+    if (!next) return;
+    await this.supabaseService.client.from('hr_candidates').update({ stage: next }).eq('id', c.id);
+    await this.candidates.refresh();
+  }
+
+  async rejectCandidate(c: any) {
+    if (!confirm(`Mark ${c.full_name} as Rejected?`)) return;
+    await this.supabaseService.client.from('hr_candidates').update({ stage: 'Rejected' }).eq('id', c.id);
+    await this.candidates.refresh();
+  }
+
+  // Hands off an accepted candidate directly into the existing Onboarding
+  // module, using the exact same default document checklist logic
+  // (role-aware -- clinical roles get NABH credentialing items) rather
+  // than building a second, disconnected onboarding path.
+  async convertCandidateToOnboarding(c: any, req: any) {
+    const client = this.supabaseService.client;
+    const { error } = await client.from('hr_onboarding').insert({
+      name: c.full_name,
+      position: req.position_title,
+      dept: req.department,
+      employment_type: req.employment_type,
+      stage: 'Documents',
+      doc_checklist: onboardingDocsFor(req.employment_type).map((label) => ({ label, done: false })),
+    });
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    await client.from('hr_candidates').update({ converted_to_onboarding: true }).eq('id', c.id);
+
+    const filledCount = this.candidatesFor(req.id).filter((x: any) => x.converted_to_onboarding || x.id === c.id).length;
+    if (filledCount >= req.openings) {
+      await client.from('hr_job_requisitions').update({ status: 'Filled' }).eq('id', req.id);
+    }
+
+    await this.candidates.refresh();
+    await this.jobRequisitions.refresh();
+    await this.onboarding.refresh();
+    alert(`${c.full_name} sent to Onboarding.`);
+  }
+
   staffNameFor(staffId: string): string {
     return this.staff.data().find((s: any) => s.id === staffId)?.full_name ?? 'Unknown';
   }
@@ -3430,6 +3663,8 @@ export class HrComponent implements OnDestroy {
     this.doctorRevenueShare.dispose();
     this.invoicesForRevShare.dispose();
     this.trainingRecords.dispose();
+    this.jobRequisitions.dispose();
+    this.candidates.dispose();
     this.statutoryRegistrations.dispose();
     this.payrollRuns.dispose();
     this.complianceFilings.dispose();
