@@ -7,7 +7,7 @@ import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 import { PrintLetterheadComponent } from '../../shared/print-letterhead.component';
 import { AttendanceCaptureComponent, AttendanceCapture } from '../../shared/attendance-capture.component';
 
-type HrTab = 'directory' | 'attendance' | 'roster' | 'onboarding' | 'exit' | 'salary' | 'payroll' | 'revshare' | 'letters' | 'orgchart' | 'loans' | 'grievance';
+type HrTab = 'directory' | 'attendance' | 'roster' | 'onboarding' | 'exit' | 'salary' | 'payroll' | 'revshare' | 'training' | 'letters' | 'orgchart' | 'loans' | 'grievance';
 
 const LEAVE_TYPES = ['Casual', 'Sick', 'Earned', 'Maternity/Paternity', 'Unpaid'];
 
@@ -32,6 +32,13 @@ const EMPLOYMENT_TYPES = ['Permanent', 'Medical Officer', 'Contract', 'Consultan
 const LOAN_TYPES = ['Personal Loan', 'Salary Advance', 'Medical Advance', 'Festival Advance'];
 const LETTER_TYPES = ['Offer Letter', 'Appointment Letter', 'Relieving Letter', 'Experience Letter', 'Salary Certificate'];
 const GRIEVANCE_CATEGORIES = ['Workplace Conduct', 'Compensation', 'Facilities', 'Harassment', 'Discrimination', 'Other'];
+
+// NABH requires a minimum 20 CME hours/year for clinical staff. Mandatory
+// safety trainings recur on a fixed cycle rather than being one-time --
+// BLS/ACLS certifications are internationally standard at 2-year validity.
+const NABH_CME_MIN_HOURS_PER_YEAR = 20;
+const TRAINING_TYPES = ['CME', 'BLS', 'ACLS', 'Fire Safety', 'Infection Control', 'Code Blue', 'Biomedical Waste Management', 'Patient Safety', 'HIPAA / Data Privacy'];
+const MANDATORY_SAFETY_TRAININGS = ['BLS', 'Fire Safety', 'Infection Control', 'Code Blue'];
 
 // Real Indian HR onboarding/offboarding document requirements -- not
 // generic placeholders. Aadhaar and PAN are mandatory KYC for payroll and
@@ -1214,6 +1221,90 @@ function pillStyle(stage: string) {
         </div>
       </div>
 
+      <!-- ================= TRAINING & CME ================= -->
+      <div *ngIf="activeTab === 'training'" class="flex flex-col gap-[14px]">
+        <div class="flex items-start justify-between gap-3 flex-wrap">
+          <div class="text-[11.5px] text-[#8094a6] bg-[#f7f9fb] border border-line-1 rounded-[9px] px-3 py-2 max-w-[560px]">
+            NABH requires a minimum 20 CME hours/year for clinical staff, plus current certification in mandatory
+            safety trainings (BLS, Fire Safety, Infection Control, Code Blue) -- these recur and expire, they are
+            not one-time completions.
+          </div>
+          <button (click)="showNewTraining = true" class="bg-brand hover:bg-brand-hover text-white rounded-[9px] px-4 py-2 text-[12.5px] font-semibold flex-none">+ Log Training</button>
+        </div>
+
+        <div *ngFor="let s of staff.data()" class="bg-white border border-line-1 rounded-card p-4">
+          <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+            <div>
+              <div class="font-semibold text-ink-2 text-[13.5px]">{{ s.full_name }}</div>
+              <div class="text-[11.5px] text-muted-1">{{ s.title }}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-[10.5px] text-muted-1 uppercase font-semibold">CME This Year</div>
+              <div class="font-mono font-bold text-[14px]" [class]="cmeHoursThisYear(s.id) >= 20 ? 'text-success-fg' : 'text-warning-fg'">
+                {{ cmeHoursThisYear(s.id) }} / 20 hrs
+              </div>
+            </div>
+          </div>
+          <div class="w-full h-1.5 bg-line-2 rounded-full overflow-hidden mb-3">
+            <div class="h-full rounded-full" [style.width.%]="Math.min(100, (cmeHoursThisYear(s.id)/20)*100)"
+              [style.background]="cmeHoursThisYear(s.id) >= 20 ? '#1d9a57' : '#d99a2b'"></div>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div *ngFor="let t of mandatoryTrainings" class="border border-line-1 rounded-[8px] px-2.5 py-1.5">
+              <div class="text-[10px] text-muted-1 uppercase font-semibold">{{ t }}</div>
+              <span class="px-1.5 py-0.5 rounded-pill text-[10px] font-semibold"
+                [style.background]="trainingStatus(s.id, t).bg" [style.color]="trainingStatus(s.id, t).fg">
+                {{ trainingStatus(s.id, t).text }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- New Training modal -->
+      <div *ngIf="showNewTraining" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" (click)="showNewTraining = false">
+        <form (ngSubmit)="createTraining()" (click)="$event.stopPropagation()" class="bg-white rounded-card p-5 w-full max-w-sm space-y-3">
+          <h3 class="font-semibold text-ink-2">Log Training / CME</h3>
+          <div>
+            <label class="block text-xs font-medium text-body-1 mb-1">Staff member</label>
+            <select required [(ngModel)]="trainingForm.staff_id" name="staff_id" class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand">
+              <option value="">Select staff…</option>
+              <option *ngFor="let s of staff.data()" [value]="s.id">{{ s.full_name }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-body-1 mb-1">Training type</label>
+            <select required [(ngModel)]="trainingForm.training_type" name="training_type" class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand">
+              <option *ngFor="let t of trainingTypes" [value]="t">{{ t }}</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs font-medium text-body-1 mb-1">Hours</label>
+              <input required type="number" min="0" [(ngModel)]="trainingForm.hours" name="hours"
+                class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-body-1 mb-1">Completed</label>
+              <input required type="date" [(ngModel)]="trainingForm.completed_date" name="completed_date"
+                class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-body-1 mb-1">Expiry (if applicable)</label>
+            <input type="date" [(ngModel)]="trainingForm.expiry_date" name="expiry_date"
+              class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
+          </div>
+          <div *ngIf="errorMsg" class="text-xs text-danger-fg bg-danger-bg rounded-[9px] px-3 py-2">{{ errorMsg }}</div>
+          <div class="flex gap-2 pt-1">
+            <button type="button" (click)="showNewTraining = false" class="flex-1 border border-line-1 rounded-[9px] py-2 text-sm font-medium text-body-1">Cancel</button>
+            <button type="submit" [disabled]="submitting" class="flex-1 bg-brand hover:bg-brand-hover text-white rounded-[9px] py-2 text-sm font-semibold disabled:opacity-60">
+              {{ submitting ? 'Saving…' : 'Save' }}
+            </button>
+          </div>
+        </form>
+      </div>
+
       <!-- ================= LETTERS ================= -->
       <div *ngIf="activeTab === 'letters'" class="flex flex-col gap-3">
         <div class="flex justify-end">
@@ -1689,6 +1780,7 @@ export class HrComponent implements OnDestroy {
     { key: 'salary', label: 'Salary Structure', icon: 'ph-currency-circle-dollar' },
     { key: 'payroll', label: 'Payroll & Compliance', icon: 'ph-lock-key' },
     { key: 'revshare', label: 'Doctor Revenue Share', icon: 'ph-percent' },
+    { key: 'training', label: 'Training & CME', icon: 'ph-certificate' },
     { key: 'letters', label: 'Letters', icon: 'ph-envelope' },
     { key: 'orgchart', label: 'Org Chart', icon: 'ph-sitemap' },
     { key: 'loans', label: 'Loans', icon: 'ph-hand-coins' },
@@ -1702,6 +1794,11 @@ export class HrComponent implements OnDestroy {
   staffSearch = '';
   profileStaff: any = null;
   showNewOnboarding = false;
+  showNewTraining = false;
+  trainingForm = { staff_id: '', training_type: TRAINING_TYPES[0], hours: '', completed_date: '', expiry_date: '' };
+  trainingTypes = TRAINING_TYPES;
+  mandatoryTrainings = MANDATORY_SAFETY_TRAININGS;
+  Math = Math;
   showNewExit = false;
   showNewLetter = false;
   showNewLoan = false;
@@ -1729,6 +1826,7 @@ export class HrComponent implements OnDestroy {
   dutyRoster: RealtimeTableHandle<any>;
   doctorRevenueShare: RealtimeTableHandle<any>;
   invoicesForRevShare: RealtimeTableHandle<any>;
+  trainingRecords: RealtimeTableHandle<any>;
   statutoryRegistrations: RealtimeTableHandle<any>;
   payrollRuns: RealtimeTableHandle<any>;
   complianceFilings: RealtimeTableHandle<any>;
@@ -1747,6 +1845,7 @@ export class HrComponent implements OnDestroy {
     this.dutyRoster = this.realtime.watch('hr_duty_roster', (q) => q.order('shift_date'));
     this.doctorRevenueShare = this.realtime.watch('hr_doctor_revenue_share');
     this.invoicesForRevShare = this.realtime.watch('invoices', (q) => q.order('created_at', { ascending: false }));
+    this.trainingRecords = this.realtime.watch('hr_training_records', (q) => q.order('completed_date', { ascending: false }));
     this.statutoryRegistrations = this.realtime.watch('hr_statutory_registrations');
     this.payrollRuns = this.realtime.watch('hr_payroll_runs', (q) => q.order('period', { ascending: false }));
     this.complianceFilings = this.realtime.watch('hr_compliance_filings', (q) => q.order('due_date'));
@@ -3025,6 +3124,57 @@ export class HrComponent implements OnDestroy {
     return { consultationRevenue, procedureRevenue, invoiceCount: matchingInvoices.length, payout, guaranteeApplied };
   }
 
+  // ================= TRAINING & CME =================
+  // Real CME hours this calendar year, summed from actual logged records
+  // -- checked against the NABH 20-hour/year minimum.
+  cmeHoursThisYear(staffId: string): number {
+    const yearStart = new Date().getFullYear() + '-01-01';
+    return this.trainingRecords.data()
+      .filter((t: any) => t.staff_id === staffId && t.training_type === 'CME' && (t.completed_date ?? '') >= yearStart)
+      .reduce((sum: number, t: any) => sum + Number(t.hours || 0), 0);
+  }
+
+  // Status for one of the mandatory recurring safety trainings -- Missing
+  // (never logged), Expired (past its expiry date), Expiring Soon (within
+  // 60 days, matching the same threshold used for credential alerts
+  // elsewhere in HR), or Current.
+  trainingStatus(staffId: string, trainingType: string): { text: string; bg: string; fg: string } {
+    const records = this.trainingRecords.data()
+      .filter((t: any) => t.staff_id === staffId && t.training_type === trainingType)
+      .sort((a: any, b: any) => (b.completed_date ?? '').localeCompare(a.completed_date ?? ''));
+    const latest = records[0];
+
+    if (!latest) return { text: 'Missing', bg: '#eef2f6', fg: '#8094a6' };
+    if (!latest.expiry_date) return { text: 'Current', bg: '#dff1ef', fg: '#0b7d72' };
+
+    const daysLeft = Math.round((new Date(latest.expiry_date).getTime() - Date.now()) / 86400000);
+    if (daysLeft < 0) return { text: 'Expired', bg: '#fbe3e3', fg: '#b42318' };
+    if (daysLeft <= 60) return { text: `${daysLeft}d left`, bg: '#fdf0d8', fg: '#946200' };
+    return { text: 'Current', bg: '#dff1ef', fg: '#0b7d72' };
+  }
+
+  async createTraining() {
+    this.errorMsg = '';
+    this.submitting = true;
+    try {
+      const { error } = await this.supabaseService.client.from('hr_training_records').insert({
+        staff_id: this.trainingForm.staff_id,
+        training_type: this.trainingForm.training_type,
+        hours: Number(this.trainingForm.hours) || 0,
+        completed_date: this.trainingForm.completed_date,
+        expiry_date: this.trainingForm.expiry_date || null,
+      });
+      if (error) throw error;
+      this.showNewTraining = false;
+      this.trainingForm = { staff_id: '', training_type: TRAINING_TYPES[0], hours: '', completed_date: '', expiry_date: '' };
+      await this.trainingRecords.refresh();
+    } catch (err: any) {
+      this.errorMsg = err.message;
+    } finally {
+      this.submitting = false;
+    }
+  }
+
   staffNameFor(staffId: string): string {
     return this.staff.data().find((s: any) => s.id === staffId)?.full_name ?? 'Unknown';
   }
@@ -3118,6 +3268,7 @@ export class HrComponent implements OnDestroy {
     this.dutyRoster.dispose();
     this.doctorRevenueShare.dispose();
     this.invoicesForRevShare.dispose();
+    this.trainingRecords.dispose();
     this.statutoryRegistrations.dispose();
     this.payrollRuns.dispose();
     this.complianceFilings.dispose();
