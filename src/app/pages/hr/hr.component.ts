@@ -1109,6 +1109,7 @@ function pillStyle(stage: string) {
                     [style.background]="rosterCellFor(s.id, d.date) ? shiftColor(rosterCellFor(s.id, d.date).shift_type_id).bg : '#f7f9fb'"
                     [style.color]="rosterCellFor(s.id, d.date) ? shiftColor(rosterCellFor(s.id, d.date).shift_type_id).fg : '#c2ccd6'">
                     {{ rosterCellFor(s.id, d.date) ? shiftNameFor(rosterCellFor(s.id, d.date).shift_type_id) : '+' }}
+                    <i *ngIf="rosterCellFor(s.id, d.date)?.status === 'Swapped'" class="ph ph-arrows-left-right text-[9px] ml-0.5"></i>
                   </button>
                 </td>
               </tr>
@@ -1118,18 +1119,42 @@ function pillStyle(stage: string) {
       </div>
 
       <!-- Roster shift picker -->
-      <div *ngIf="rosterPicker" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" (click)="rosterPicker = null">
+      <div *ngIf="rosterPicker" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" (click)="closeRosterPicker()">
         <div (click)="$event.stopPropagation()" class="bg-white rounded-card p-5 w-full max-w-xs space-y-2">
           <h3 class="font-semibold text-ink-2 text-[13.5px]">{{ staffNameFor(rosterPicker.staffId) }} -- {{ rosterPicker.date }}</h3>
-          <button *ngFor="let st of shiftTypes.data()" (click)="assignShift(rosterPicker.staffId, rosterPicker.date, st.id)"
-            class="w-full text-left px-3 py-2 rounded-[8px] border border-line-1 hover:bg-line-2 text-[12.5px] font-medium flex items-center gap-2">
-            <span class="w-2.5 h-2.5 rounded-full" [style.background]="shiftColor(st.id).fg"></span>
-            {{ st.name }} <span class="text-[10.5px] text-muted-1 ml-auto font-mono">{{ st.start_time }}-{{ st.end_time }}</span>
-          </button>
-          <button (click)="clearShift(rosterPicker.staffId, rosterPicker.date)" class="w-full text-left px-3 py-2 rounded-[8px] border border-line-1 hover:bg-danger-bg text-[12.5px] font-medium text-danger-fg">
-            Clear assignment
-          </button>
-          <button (click)="rosterPicker = null" class="w-full text-center py-1.5 text-[12px] text-muted-1">Cancel</button>
+
+          <ng-container *ngIf="!swapMode">
+            <button *ngFor="let st of shiftTypes.data()" (click)="assignShift(rosterPicker.staffId, rosterPicker.date, st.id)"
+              class="w-full text-left px-3 py-2 rounded-[8px] border border-line-1 hover:bg-line-2 text-[12.5px] font-medium flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full" [style.background]="shiftColor(st.id).fg"></span>
+              {{ st.name }} <span class="text-[10.5px] text-muted-1 ml-auto font-mono">{{ st.start_time }}-{{ st.end_time }}</span>
+            </button>
+            <button *ngIf="rosterCellFor(rosterPicker.staffId, rosterPicker.date)" (click)="swapMode = true"
+              class="w-full text-left px-3 py-2 rounded-[8px] border border-line-1 hover:bg-line-2 text-[12.5px] font-medium flex items-center gap-2 text-brand">
+              <i class="ph ph-arrows-left-right"></i> Swap with another staff member
+            </button>
+            <button (click)="clearShift(rosterPicker.staffId, rosterPicker.date)" class="w-full text-left px-3 py-2 rounded-[8px] border border-line-1 hover:bg-danger-bg text-[12.5px] font-medium text-danger-fg">
+              Clear assignment
+            </button>
+          </ng-container>
+
+          <!-- Swap sub-picker: pick who to swap this shift with -->
+          <ng-container *ngIf="swapMode">
+            <p class="text-[11.5px] text-muted-1">
+              Swapping {{ shiftNameFor(rosterCellFor(rosterPicker.staffId, rosterPicker.date).shift_type_id) }} on {{ rosterPicker.date }}.
+              Choose who to swap with:
+            </p>
+            <select [(ngModel)]="swapTargetStaffId" name="swapTargetStaffId" class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-[12.5px]">
+              <option value="">Select staff…</option>
+              <option *ngFor="let s of staff.data()" [value]="s.id" [disabled]="s.id === rosterPicker.staffId">{{ s.full_name }}</option>
+            </select>
+            <input type="date" [(ngModel)]="swapTargetDate" name="swapTargetDate" class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-[12.5px]" />
+            <div *ngIf="swapErrorMsg" class="text-[11.5px] text-danger-fg bg-danger-bg rounded-[7px] px-2.5 py-1.5">{{ swapErrorMsg }}</div>
+            <button (click)="performSwap()" class="w-full bg-brand hover:bg-brand-hover text-white rounded-[9px] py-2 text-[12.5px] font-semibold">Confirm Swap</button>
+            <button (click)="swapMode = false" class="w-full text-center py-1.5 text-[12px] text-muted-1">Back</button>
+          </ng-container>
+
+          <button *ngIf="!swapMode" (click)="closeRosterPicker()" class="w-full text-center py-1.5 text-[12px] text-muted-1">Cancel</button>
         </div>
       </div>
 
@@ -2719,6 +2744,10 @@ export class HrComponent implements OnDestroy {
   rosterWeekStart = this.mondayOf(new Date());
   rosterPicker: { staffId: string; date: string } | null = null;
   rosterConflictMsg = '';
+  swapMode = false;
+  swapTargetStaffId = '';
+  swapTargetDate = '';
+  swapErrorMsg = '';
 
   private mondayOf(d: Date): Date {
     const day = d.getDay();
@@ -2766,6 +2795,7 @@ export class HrComponent implements OnDestroy {
       Evening: { bg: '#fdf0d8', fg: '#946200' },
       Night: { bg: '#ece8fb', fg: '#5536c9' },
       'On-Call': { bg: '#eef2f6', fg: '#5f7689' },
+      'Week Off': { bg: '#f1f4f8', fg: '#9aabbb' },
     };
     return map[name] ?? { bg: '#eef2f6', fg: '#5f7689' };
   }
@@ -2773,6 +2803,59 @@ export class HrComponent implements OnDestroy {
   openRosterPicker(staffId: string, date: string) {
     this.rosterPicker = { staffId, date };
     this.rosterConflictMsg = '';
+    this.swapMode = false;
+    this.swapTargetStaffId = '';
+    this.swapTargetDate = '';
+    this.swapErrorMsg = '';
+  }
+
+  closeRosterPicker() {
+    this.rosterPicker = null;
+    this.swapMode = false;
+  }
+
+  // Real shift swap: exchanges the shift_type_id between two roster
+  // entries and marks both 'Swapped', linked to each other via
+  // swapped_with_id so the exchange is traceable, not just a silent edit.
+  // Runs the same rest-hour check against BOTH resulting assignments,
+  // since a swap can just as easily create a zero-rest conflict as a
+  // fresh assignment can.
+  async performSwap() {
+    if (!this.rosterPicker) return;
+    this.swapErrorMsg = '';
+
+    if (!this.swapTargetStaffId || !this.swapTargetDate) {
+      this.swapErrorMsg = 'Select both a staff member and a date to swap with.';
+      return;
+    }
+    if (this.swapTargetStaffId === this.rosterPicker.staffId && this.swapTargetDate === this.rosterPicker.date) {
+      this.swapErrorMsg = 'Choose a different person or date to swap with.';
+      return;
+    }
+
+    const sourceEntry = this.rosterCellFor(this.rosterPicker.staffId, this.rosterPicker.date);
+    const targetEntry = this.rosterCellFor(this.swapTargetStaffId, this.swapTargetDate);
+    if (!sourceEntry) {
+      this.swapErrorMsg = 'This cell has no assignment to swap.';
+      return;
+    }
+    if (!targetEntry) {
+      this.swapErrorMsg = `${this.staffNameFor(this.swapTargetStaffId)} has no assignment on ${this.swapTargetDate} to swap with.`;
+      return;
+    }
+
+    // Check both resulting assignments for rest-hour conflicts before committing.
+    const sourceConflict = this.hasRestConflict(this.rosterPicker.staffId, this.rosterPicker.date, targetEntry.shift_type_id);
+    const targetConflict = this.hasRestConflict(this.swapTargetStaffId, this.swapTargetDate, sourceEntry.shift_type_id);
+    const combinedWarning = [sourceConflict, targetConflict].filter(Boolean).join(' ');
+    if (combinedWarning && !confirm(combinedWarning + '\n\nSwap anyway?')) return;
+
+    const client = this.supabaseService.client;
+    await client.from('hr_duty_roster').update({ shift_type_id: targetEntry.shift_type_id, status: 'Swapped', swapped_with_id: targetEntry.id }).eq('id', sourceEntry.id);
+    await client.from('hr_duty_roster').update({ shift_type_id: sourceEntry.shift_type_id, status: 'Swapped', swapped_with_id: sourceEntry.id }).eq('id', targetEntry.id);
+
+    this.closeRosterPicker();
+    await this.dutyRoster.refresh();
   }
 
   // Real rest-hour safety check: a Night shift ends at 07:00 -- assigning
