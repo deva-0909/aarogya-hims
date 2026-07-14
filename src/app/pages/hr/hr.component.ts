@@ -7,7 +7,7 @@ import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 import { PrintLetterheadComponent } from '../../shared/print-letterhead.component';
 import { AttendanceCaptureComponent, AttendanceCapture } from '../../shared/attendance-capture.component';
 
-type HrTab = 'directory' | 'attendance' | 'roster' | 'onboarding' | 'exit' | 'salary' | 'payroll' | 'letters' | 'orgchart' | 'loans' | 'grievance';
+type HrTab = 'directory' | 'attendance' | 'roster' | 'onboarding' | 'exit' | 'salary' | 'payroll' | 'revshare' | 'letters' | 'orgchart' | 'loans' | 'grievance';
 
 const LEAVE_TYPES = ['Casual', 'Sick', 'Earned', 'Maternity/Paternity', 'Unpaid'];
 
@@ -1158,6 +1158,62 @@ function pillStyle(stage: string) {
         </div>
       </div>
 
+      <!-- ================= DOCTOR REVENUE SHARE ================= -->
+      <div *ngIf="activeTab === 'revshare'" class="flex flex-col gap-[14px]">
+        <div class="text-[12px] text-[#5f7689] bg-[#f7f9fb] border border-line-1 rounded-[9px] px-3 py-2">
+          Computed from real Billing invoices attributed to each doctor this month -- not a parallel manual log.
+          Consultation vs. procedure revenue is classified from the invoice line-item description
+          (containing "consult" counts as consultation; everything else is treated as procedure/other revenue).
+        </div>
+
+        <div *ngFor="let d of consultantDoctors()" class="bg-white border border-line-1 rounded-card p-4">
+          <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+            <div>
+              <div class="font-semibold text-ink-2 text-[14px]">{{ d.full_name }}</div>
+              <div class="text-[11.5px] text-muted-1">{{ d.title }} · {{ d.department }}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-[10.5px] text-muted-1 uppercase font-semibold">Payable This Month</div>
+              <div class="font-mono font-bold text-[16px] text-success-fg">₹{{ revenueShareFor(d.id).payout | number }}</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[12px] mb-3">
+            <div>
+              <label class="block text-[10px] font-semibold text-muted-1 uppercase mb-1">Consultation %</label>
+              <input type="number" min="0" max="100" [ngModel]="revShareAgreementFor(d.id).consultation_pct"
+                (ngModelChange)="updateRevShareField(d.id, 'consultation_pct', $event)"
+                class="w-full px-2 py-1.5 border border-line-1 rounded-[7px] text-[12.5px] font-mono font-semibold" />
+            </div>
+            <div>
+              <label class="block text-[10px] font-semibold text-muted-1 uppercase mb-1">Procedure %</label>
+              <input type="number" min="0" max="100" [ngModel]="revShareAgreementFor(d.id).procedure_pct"
+                (ngModelChange)="updateRevShareField(d.id, 'procedure_pct', $event)"
+                class="w-full px-2 py-1.5 border border-line-1 rounded-[7px] text-[12.5px] font-mono font-semibold" />
+            </div>
+            <div>
+              <label class="block text-[10px] font-semibold text-muted-1 uppercase mb-1">Min. Guarantee ₹</label>
+              <input type="number" min="0" [ngModel]="revShareAgreementFor(d.id).minimum_guarantee"
+                (ngModelChange)="updateRevShareField(d.id, 'minimum_guarantee', $event)"
+                class="w-full px-2 py-1.5 border border-line-1 rounded-[7px] text-[12.5px] font-mono font-semibold" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[12px] pt-3 border-t border-line-2">
+            <div><div class="text-muted-1 text-[10.5px]">Consultation Revenue</div><div class="font-mono font-semibold text-body-1">₹{{ revenueShareFor(d.id).consultationRevenue | number }}</div></div>
+            <div><div class="text-muted-1 text-[10.5px]">Procedure Revenue</div><div class="font-mono font-semibold text-body-1">₹{{ revenueShareFor(d.id).procedureRevenue | number }}</div></div>
+            <div><div class="text-muted-1 text-[10.5px]">Invoices Counted</div><div class="font-mono font-semibold text-body-1">{{ revenueShareFor(d.id).invoiceCount }}</div></div>
+          </div>
+          <div *ngIf="revenueShareFor(d.id).guaranteeApplied" class="text-[11px] text-warning-fg bg-warning-bg rounded-[7px] px-2.5 py-1.5 mt-2">
+            Computed share was below the minimum guarantee -- guarantee amount applied instead.
+          </div>
+        </div>
+
+        <div *ngIf="consultantDoctors().length === 0" class="text-center text-body-2 text-sm py-8 bg-white border border-line-1 rounded-card">
+          No Consultant-type doctors on staff yet.
+        </div>
+      </div>
+
       <!-- ================= LETTERS ================= -->
       <div *ngIf="activeTab === 'letters'" class="flex flex-col gap-3">
         <div class="flex justify-end">
@@ -1632,6 +1688,7 @@ export class HrComponent implements OnDestroy {
     { key: 'exit', label: 'Exit', icon: 'ph-user-minus' },
     { key: 'salary', label: 'Salary Structure', icon: 'ph-currency-circle-dollar' },
     { key: 'payroll', label: 'Payroll & Compliance', icon: 'ph-lock-key' },
+    { key: 'revshare', label: 'Doctor Revenue Share', icon: 'ph-percent' },
     { key: 'letters', label: 'Letters', icon: 'ph-envelope' },
     { key: 'orgchart', label: 'Org Chart', icon: 'ph-sitemap' },
     { key: 'loans', label: 'Loans', icon: 'ph-hand-coins' },
@@ -1670,6 +1727,8 @@ export class HrComponent implements OnDestroy {
   attendance: RealtimeTableHandle<any>;
   shiftTypes: RealtimeTableHandle<any>;
   dutyRoster: RealtimeTableHandle<any>;
+  doctorRevenueShare: RealtimeTableHandle<any>;
+  invoicesForRevShare: RealtimeTableHandle<any>;
   statutoryRegistrations: RealtimeTableHandle<any>;
   payrollRuns: RealtimeTableHandle<any>;
   complianceFilings: RealtimeTableHandle<any>;
@@ -1686,6 +1745,8 @@ export class HrComponent implements OnDestroy {
     this.attendance = this.realtime.watch('hr_attendance', (q) => q.order('attendance_date', { ascending: false }));
     this.shiftTypes = this.realtime.watch('hr_shift_types', (q) => q.order('start_time'));
     this.dutyRoster = this.realtime.watch('hr_duty_roster', (q) => q.order('shift_date'));
+    this.doctorRevenueShare = this.realtime.watch('hr_doctor_revenue_share');
+    this.invoicesForRevShare = this.realtime.watch('invoices', (q) => q.order('created_at', { ascending: false }));
     this.statutoryRegistrations = this.realtime.watch('hr_statutory_registrations');
     this.payrollRuns = this.realtime.watch('hr_payroll_runs', (q) => q.order('period', { ascending: false }));
     this.complianceFilings = this.realtime.watch('hr_compliance_filings', (q) => q.order('due_date'));
@@ -2912,6 +2973,58 @@ export class HrComponent implements OnDestroy {
     this.rosterPicker = null;
   }
 
+  // ================= DOCTOR REVENUE SHARE =================
+  consultantDoctors() {
+    return this.staff.data().filter((s: any) => s.employment_type === 'Consultant');
+  }
+
+  revShareAgreementFor(staffId: string): { consultation_pct: number; procedure_pct: number; minimum_guarantee: number } {
+    const existing = this.doctorRevenueShare.data().find((r: any) => r.staff_id === staffId);
+    return existing ?? { consultation_pct: 40, procedure_pct: 60, minimum_guarantee: 0 };
+  }
+
+  async updateRevShareField(staffId: string, field: string, value: string) {
+    const client = this.supabaseService.client;
+    const existing = this.doctorRevenueShare.data().find((r: any) => r.staff_id === staffId);
+    if (existing) {
+      await client.from('hr_doctor_revenue_share').update({ [field]: Number(value) || 0 }).eq('id', existing.id);
+    } else {
+      const defaults = this.revShareAgreementFor(staffId);
+      await client.from('hr_doctor_revenue_share').insert({ staff_id: staffId, ...defaults, [field]: Number(value) || 0 });
+    }
+    await this.doctorRevenueShare.refresh();
+  }
+
+  // Real computation from actual invoices attributed to this doctor this
+  // month -- classifies each line item as consultation vs. procedure/other
+  // by description keyword, applies the doctor's agreed percentages, and
+  // enforces their minimum guarantee if the computed share falls short.
+  revenueShareFor(staffId: string): { consultationRevenue: number; procedureRevenue: number; invoiceCount: number; payout: number; guaranteeApplied: boolean } {
+    const doctor = this.staff.data().find((s: any) => s.id === staffId);
+    const agreement = this.revShareAgreementFor(staffId);
+    const period = this.currentPeriod();
+
+    const matchingInvoices = this.invoicesForRevShare.data().filter((inv: any) =>
+      inv.doctor === doctor?.full_name && (inv.created_at ?? '').startsWith(period)
+    );
+
+    let consultationRevenue = 0;
+    let procedureRevenue = 0;
+    for (const inv of matchingInvoices) {
+      for (const item of inv.items ?? []) {
+        const isConsultation = (item.d ?? '').toLowerCase().includes('consult');
+        if (isConsultation) consultationRevenue += Number(item.amt) || 0;
+        else procedureRevenue += Number(item.amt) || 0;
+      }
+    }
+
+    const computedShare = Math.round(consultationRevenue * (agreement.consultation_pct / 100) + procedureRevenue * (agreement.procedure_pct / 100));
+    const guaranteeApplied = computedShare < agreement.minimum_guarantee;
+    const payout = guaranteeApplied ? agreement.minimum_guarantee : computedShare;
+
+    return { consultationRevenue, procedureRevenue, invoiceCount: matchingInvoices.length, payout, guaranteeApplied };
+  }
+
   staffNameFor(staffId: string): string {
     return this.staff.data().find((s: any) => s.id === staffId)?.full_name ?? 'Unknown';
   }
@@ -3003,6 +3116,8 @@ export class HrComponent implements OnDestroy {
     this.attendance.dispose();
     this.shiftTypes.dispose();
     this.dutyRoster.dispose();
+    this.doctorRevenueShare.dispose();
+    this.invoicesForRevShare.dispose();
     this.statutoryRegistrations.dispose();
     this.payrollRuns.dispose();
     this.complianceFilings.dispose();

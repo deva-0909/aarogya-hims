@@ -6,14 +6,15 @@ import { RealtimeTableService, RealtimeTableHandle } from '../../core/realtime-t
 import { StatusBadgeComponent } from '../../shared/status-badge.component';
 import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 import { PrintLetterheadComponent } from '../../shared/print-letterhead.component';
+import { Doctor, rosterFor } from '../../core/doctors';
 
 const PAYMENT_MODES = ['Cash', 'UPI', 'Card', 'Insurance / TPA'];
 type BillTab = 'invoices' | 'payments' | 'analytics';
 
 interface InvoiceForm {
-  patient: string; mrn: string; dept: string; description: string; amount: string;
+  patient: string; mrn: string; dept: string; description: string; amount: string; doctor: string;
 }
-const emptyInvoiceForm = (): InvoiceForm => ({ patient: '', mrn: '', dept: '', description: '', amount: '' });
+const emptyInvoiceForm = (): InvoiceForm => ({ patient: '', mrn: '', dept: '', description: '', amount: '', doctor: '' });
 
 function invoiceTotal(items: any[]): number {
   return (items ?? []).reduce((sum, i) => sum + Number(i.amt || 0), 0);
@@ -62,7 +63,7 @@ function shortId(id: string, prefix: string): string {
               <span class="font-semibold text-[#22384a]">{{ inv.patient }}</span>
               <app-status-badge [status]="inv.status"></app-status-badge>
             </div>
-            <div class="text-[11.5px] text-[#8094a6] mt-[3px]">{{ inv.dept }} · {{ inv.created_at | date: 'mediumDate' }} · {{ inv.payer }}</div>
+            <div class="text-[11.5px] text-[#8094a6] mt-[3px]">{{ inv.dept }}{{ inv.doctor ? ' · ' + inv.doctor : '' }} · {{ inv.created_at | date: 'mediumDate' }} · {{ inv.payer }}</div>
           </div>
           <div class="text-right flex-none">
             <div class="font-mono font-semibold text-[14px] text-[#12303f]">₹{{ total(inv) | number }}</div>
@@ -188,6 +189,14 @@ function shortId(id: string, prefix: string): string {
             </div>
           </div>
           <div>
+            <label class="block text-xs font-medium text-body-1 mb-1">Doctor (optional, for revenue-share tracking)</label>
+            <select [(ngModel)]="form.doctor" name="doctor"
+              class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand">
+              <option value="">— none —</option>
+              <option *ngFor="let d of prescribers()" [value]="d.full_name">{{ d.full_name }} — {{ d.department }}</option>
+            </select>
+          </div>
+          <div>
             <label class="block text-xs font-medium text-body-1 mb-1">Line item description</label>
             <input required [(ngModel)]="form.description" name="description" placeholder="OPD Consultation"
               class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
@@ -237,8 +246,6 @@ function shortId(id: string, prefix: string): string {
 })
 export class BillingComponent implements OnDestroy {
   paymentModes = PAYMENT_MODES;
-  invoices: RealtimeTableHandle<any>;
-  payments: RealtimeTableHandle<any>;
   form: InvoiceForm = emptyInvoiceForm();
   busy = false;
   errorMsg = '';
@@ -256,9 +263,18 @@ export class BillingComponent implements OnDestroy {
   payAmount = '';
   payMode = PAYMENT_MODES[0];
 
+  invoices: RealtimeTableHandle<any>;
+  payments: RealtimeTableHandle<any>;
+  doctors: RealtimeTableHandle<Doctor>;
+
   constructor(private supabaseService: SupabaseService, private realtime: RealtimeTableService) {
     this.invoices = this.realtime.watch('invoices', (q) => q.order('created_at', { ascending: false }));
     this.payments = this.realtime.watch('payments', (q) => q.order('created_at', { ascending: false }));
+    this.doctors = this.realtime.watch<Doctor>('doctors', (q) => q.eq('active', true).order('full_name'));
+  }
+
+  prescribers(): Doctor[] {
+    return rosterFor(this.doctors.data());
   }
 
   printingInvoice: any = null;
@@ -326,6 +342,7 @@ export class BillingComponent implements OnDestroy {
         patient: this.form.patient,
         mrn: this.form.mrn,
         dept: this.form.dept,
+        doctor: this.form.doctor || null,
         items,
         paid: 0,
         payer: 'Cash',
@@ -374,5 +391,6 @@ export class BillingComponent implements OnDestroy {
   ngOnDestroy() {
     this.invoices.dispose();
     this.payments.dispose();
+    this.doctors.dispose();
   }
 }
