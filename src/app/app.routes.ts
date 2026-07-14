@@ -12,7 +12,6 @@ import { BloodBankComponent } from './pages/blood-bank/blood-bank.component';
 import { RadiologyComponent } from './pages/radiology/radiology.component';
 import { InsuranceComponent } from './pages/insurance/insurance.component';
 import { InventoryComponent } from './pages/inventory/inventory.component';
-import { HrComponent } from './pages/hr/hr.component';
 import { AmbulanceComponent } from './pages/ambulance/ambulance.component';
 import { PurchaseComponent } from './pages/purchase/purchase.component';
 import { IcuComponent } from './pages/icu/icu.component';
@@ -43,7 +42,6 @@ const LIVE_PAGES: Record<string, any> = {
   radiology: RadiologyComponent,
   insurance: InsuranceComponent,
   inventory: InventoryComponent,
-  hr: HrComponent,
   ambulance: AmbulanceComponent,
   purchase: PurchaseComponent,
   icu: IcuComponent,
@@ -70,7 +68,15 @@ export const routes: Routes = [
     component: LayoutComponent,
     children: [
       { path: '', component: CommandCenterComponent, canActivate: [defaultLandingGuard] },
-      ...MODULES.map((m) => {
+      // HR is lazy-loaded on its own -- by far the largest single module
+      // (15 tabs), so it shouldn't weigh down the initial bundle for
+      // everyone who never opens it.
+      {
+        path: 'hr',
+        loadComponent: () => import('./pages/hr/hr.component').then((m) => m.HrComponent),
+        data: { moduleId: MODULES.find((m) => routeFor(m) === 'hr')?.id },
+      },
+      ...MODULES.filter((m) => routeFor(m) !== 'hr').map((m) => {
         const path = routeFor(m);
         const component = LIVE_PAGES[path] ?? ModuleStubComponent;
         return { path, component, data: { moduleId: m.id } };
