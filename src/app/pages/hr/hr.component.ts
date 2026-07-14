@@ -7,7 +7,7 @@ import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 import { PrintLetterheadComponent } from '../../shared/print-letterhead.component';
 import { AttendanceCaptureComponent, AttendanceCapture } from '../../shared/attendance-capture.component';
 
-type HrTab = 'dashboard' | 'recruitment' | 'directory' | 'attendance' | 'roster' | 'onboarding' | 'exit' | 'salary' | 'payroll' | 'revshare' | 'training' | 'letters' | 'orgchart' | 'loans' | 'grievance';
+type HrTab = 'dashboard' | 'recruitment' | 'directory' | 'attendance' | 'roster' | 'onboarding' | 'exit' | 'salary' | 'payroll' | 'revshare' | 'training' | 'appraisals' | 'letters' | 'orgchart' | 'loans' | 'grievance';
 
 const LEAVE_TYPES = ['Casual', 'Sick', 'Earned', 'Maternity/Paternity', 'Unpaid'];
 
@@ -1477,6 +1477,102 @@ function pillStyle(stage: string) {
         </form>
       </div>
 
+      <!-- ================= PERFORMANCE APPRAISALS ================= -->
+      <div *ngIf="activeTab === 'appraisals'" class="flex flex-col gap-[14px]">
+        <div class="bg-white border border-line-1 rounded-card p-4 flex items-center justify-between flex-wrap gap-2">
+          <div class="flex items-center gap-2">
+            <label class="text-[12px] font-medium text-body-1">Cycle:</label>
+            <select [(ngModel)]="selectedCycleId" name="selectedCycleId" class="border border-line-1 rounded-[9px] px-3 py-1.5 text-[12.5px]">
+              <option value="">Select a cycle…</option>
+              <option *ngFor="let c of appraisalCycles.data()" [value]="c.id">{{ c.period }} ({{ c.status }})</option>
+            </select>
+          </div>
+          <button (click)="showNewCycle = true" class="bg-brand hover:bg-brand-hover text-white rounded-[9px] px-4 py-2 text-[12.5px] font-semibold">+ New Cycle</button>
+        </div>
+
+        <div *ngIf="!selectedCycleId" class="text-center text-body-2 text-sm py-8 bg-white border border-line-1 rounded-card">Select or create a cycle to begin appraisals.</div>
+
+        <ng-container *ngIf="selectedCycleId">
+        <div *ngFor="let s of staff.data()" class="bg-white border border-line-1 rounded-card p-4">
+          <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+            <div>
+              <div class="font-semibold text-ink-2 text-[13.5px]">{{ s.full_name }}</div>
+              <div class="text-[11.5px] text-muted-1">{{ s.title }}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-[10.5px] text-muted-1 uppercase font-semibold">Overall Rating</div>
+              <div class="font-mono font-bold text-[16px]" [class]="overallRatingFor(s.id) >= 3.5 ? 'text-success-fg' : overallRatingFor(s.id) > 0 ? 'text-warning-fg' : 'text-muted-1'">
+                {{ overallRatingFor(s.id) > 0 ? overallRatingFor(s.id).toFixed(1) + ' / 5' : '—' }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Real supporting data, pulled from Attendance and Training --
+               not the reviewer's memory or a separate manual entry. -->
+          <div class="grid grid-cols-2 sm:grid-cols-2 gap-2 mb-3 text-[11.5px]">
+            <div class="border border-line-1 rounded-[8px] px-2.5 py-1.5">
+              <div class="text-muted-1 text-[10px] uppercase font-semibold">CME Hours This Year</div>
+              <div class="font-mono font-semibold text-body-1">{{ cmeHoursThisYear(s.id) }} / 20</div>
+            </div>
+            <div class="border border-line-1 rounded-[8px] px-2.5 py-1.5">
+              <div class="text-muted-1 text-[10px] uppercase font-semibold">Present Days This Year</div>
+              <div class="font-mono font-semibold text-body-1">{{ presentDaysThisYear(s.id) }}</div>
+            </div>
+          </div>
+
+          <div *ngFor="let kra of kraListFor(s.id); let i = index" class="border border-line-1 rounded-[9px] p-2.5 mb-2">
+            <div class="grid grid-cols-1 sm:grid-cols-[1fr_80px_90px] gap-2 mb-1.5">
+              <input [ngModel]="kra.description" (ngModelChange)="updateKra(s.id, i, 'description', $event)" placeholder="KRA description"
+                class="border border-line-1 rounded-[7px] px-2 py-1.5 text-[12px]" />
+              <input type="number" min="0" max="100" [ngModel]="kra.weight_pct" (ngModelChange)="updateKra(s.id, i, 'weight_pct', $event)" placeholder="Weight %"
+                class="border border-line-1 rounded-[7px] px-2 py-1.5 text-[12px] font-mono" />
+              <select [ngModel]="kra.rating" (ngModelChange)="updateKra(s.id, i, 'rating', $event)" class="border border-line-1 rounded-[7px] px-2 py-1.5 text-[12px]">
+                <option [ngValue]="null">Rating…</option>
+                <option *ngFor="let r of [1,2,3,4,5]" [ngValue]="r">{{ r }} / 5</option>
+              </select>
+            </div>
+            <input [ngModel]="kra.comments" (ngModelChange)="updateKra(s.id, i, 'comments', $event)" placeholder="Comments (optional)"
+              class="w-full border border-line-1 rounded-[7px] px-2 py-1.5 text-[11.5px]" />
+          </div>
+          <div class="flex items-center justify-between">
+            <button (click)="addKra(s.id)" class="text-[11.5px] font-semibold text-brand hover:underline">+ Add KRA</button>
+            <span class="text-[10.5px] text-muted-1">{{ kraWeightTotal(s.id) }}% of 100% weighted</span>
+          </div>
+        </div>
+        </ng-container>
+      </div>
+
+      <!-- New Cycle modal -->
+      <div *ngIf="showNewCycle" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" (click)="showNewCycle = false">
+        <form (ngSubmit)="createCycle()" (click)="$event.stopPropagation()" class="bg-white rounded-card p-5 w-full max-w-sm space-y-3">
+          <h3 class="font-semibold text-ink-2">New Appraisal Cycle</h3>
+          <div>
+            <label class="block text-xs font-medium text-body-1 mb-1">Period name</label>
+            <input required [(ngModel)]="cycleForm.period" name="period" placeholder="e.g. 2026 Annual"
+              class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs font-medium text-body-1 mb-1">Start date</label>
+              <input required type="date" [(ngModel)]="cycleForm.start_date" name="start_date"
+                class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-body-1 mb-1">End date</label>
+              <input required type="date" [(ngModel)]="cycleForm.end_date" name="end_date"
+                class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" />
+            </div>
+          </div>
+          <div *ngIf="errorMsg" class="text-xs text-danger-fg bg-danger-bg rounded-[9px] px-3 py-2">{{ errorMsg }}</div>
+          <div class="flex gap-2 pt-1">
+            <button type="button" (click)="showNewCycle = false" class="flex-1 border border-line-1 rounded-[9px] py-2 text-sm font-medium text-body-1">Cancel</button>
+            <button type="submit" [disabled]="submitting" class="flex-1 bg-brand hover:bg-brand-hover text-white rounded-[9px] py-2 text-sm font-semibold disabled:opacity-60">
+              {{ submitting ? 'Creating…' : 'Create' }}
+            </button>
+          </div>
+        </form>
+      </div>
+
       <!-- ================= LETTERS ================= -->
       <div *ngIf="activeTab === 'letters'" class="flex flex-col gap-3">
         <div class="flex justify-end">
@@ -1968,6 +2064,7 @@ export class HrComponent implements OnDestroy {
     { key: 'payroll', label: 'Payroll & Compliance', icon: 'ph-lock-key' },
     { key: 'revshare', label: 'Doctor Revenue Share', icon: 'ph-percent' },
     { key: 'training', label: 'Training & CME', icon: 'ph-certificate' },
+    { key: 'appraisals', label: 'Performance', icon: 'ph-chart-line-up' },
     { key: 'letters', label: 'Letters', icon: 'ph-envelope' },
     { key: 'orgchart', label: 'Org Chart', icon: 'ph-sitemap' },
     { key: 'loans', label: 'Loans', icon: 'ph-hand-coins' },
@@ -1981,6 +2078,9 @@ export class HrComponent implements OnDestroy {
   staffSearch = '';
   profileStaff: any = null;
   showNewOnboarding = false;
+  selectedCycleId = '';
+  showNewCycle = false;
+  cycleForm = { period: '', start_date: '', end_date: '' };
   showNewRequisition = false;
   requisitionForm = { position_title: '', department: '', employment_type: EMPLOYMENT_TYPES[0], openings: '1', reason: 'New Position' };
   candidateFormReqId: string | null = null;
@@ -2020,6 +2120,8 @@ export class HrComponent implements OnDestroy {
   trainingRecords: RealtimeTableHandle<any>;
   jobRequisitions: RealtimeTableHandle<any>;
   candidates: RealtimeTableHandle<any>;
+  appraisalCycles: RealtimeTableHandle<any>;
+  appraisals: RealtimeTableHandle<any>;
   statutoryRegistrations: RealtimeTableHandle<any>;
   payrollRuns: RealtimeTableHandle<any>;
   complianceFilings: RealtimeTableHandle<any>;
@@ -2041,6 +2143,8 @@ export class HrComponent implements OnDestroy {
     this.trainingRecords = this.realtime.watch('hr_training_records', (q) => q.order('completed_date', { ascending: false }));
     this.jobRequisitions = this.realtime.watch('hr_job_requisitions', (q) => q.order('created_at', { ascending: false }));
     this.candidates = this.realtime.watch('hr_candidates', (q) => q.order('created_at', { ascending: false }));
+    this.appraisalCycles = this.realtime.watch('hr_appraisal_cycles', (q) => q.order('start_date', { ascending: false }));
+    this.appraisals = this.realtime.watch('hr_appraisals');
     this.statutoryRegistrations = this.realtime.watch('hr_statutory_registrations');
     this.payrollRuns = this.realtime.watch('hr_payroll_runs', (q) => q.order('period', { ascending: false }));
     this.complianceFilings = this.realtime.watch('hr_compliance_filings', (q) => q.order('due_date'));
@@ -3569,6 +3673,93 @@ export class HrComponent implements OnDestroy {
     alert(`${c.full_name} sent to Onboarding.`);
   }
 
+  // ================= PERFORMANCE APPRAISALS =================
+  async createCycle() {
+    this.errorMsg = '';
+    this.submitting = true;
+    try {
+      const { error } = await this.supabaseService.client.from('hr_appraisal_cycles').insert({
+        period: this.cycleForm.period,
+        start_date: this.cycleForm.start_date,
+        end_date: this.cycleForm.end_date,
+        status: 'Open',
+      });
+      if (error) throw error;
+      this.showNewCycle = false;
+      this.cycleForm = { period: '', start_date: '', end_date: '' };
+      await this.appraisalCycles.refresh();
+    } catch (err: any) {
+      this.errorMsg = err.message;
+    } finally {
+      this.submitting = false;
+    }
+  }
+
+  private appraisalFor(staffId: string): any {
+    return this.appraisals.data().find((a: any) => a.cycle_id === this.selectedCycleId && a.staff_id === staffId) ?? null;
+  }
+
+  kraListFor(staffId: string): { description: string; weight_pct: number; rating: number | null; comments: string }[] {
+    return this.appraisalFor(staffId)?.kras ?? [];
+  }
+
+  kraWeightTotal(staffId: string): number {
+    return this.kraListFor(staffId).reduce((sum, k) => sum + (Number(k.weight_pct) || 0), 0);
+  }
+
+  // Real weighted overall rating -- a KRA weighted 40% moves the score
+  // four times as much as one weighted 10%, not a flat average across
+  // however many KRAs happen to be listed.
+  overallRatingFor(staffId: string): number {
+    const kras = this.kraListFor(staffId).filter((k) => k.rating != null && k.weight_pct > 0);
+    const totalWeight = kras.reduce((sum, k) => sum + k.weight_pct, 0);
+    if (totalWeight === 0) return 0;
+    const weightedSum = kras.reduce((sum, k) => sum + k.rating! * k.weight_pct, 0);
+    return weightedSum / totalWeight;
+  }
+
+  private async ensureAppraisal(staffId: string): Promise<any> {
+    let appraisal = this.appraisalFor(staffId);
+    if (appraisal) return appraisal;
+    const { data, error } = await this.supabaseService.client
+      .from('hr_appraisals')
+      .insert({ cycle_id: this.selectedCycleId, staff_id: staffId, kras: [] })
+      .select()
+      .single();
+    if (error) {
+      alert(error.message);
+      return null;
+    }
+    await this.appraisals.refresh();
+    return data;
+  }
+
+  async addKra(staffId: string) {
+    const appraisal = await this.ensureAppraisal(staffId);
+    if (!appraisal) return;
+    const kras = [...(appraisal.kras ?? []), { description: '', weight_pct: 0, rating: null, comments: '' }];
+    await this.supabaseService.client.from('hr_appraisals').update({ kras }).eq('id', appraisal.id);
+    await this.appraisals.refresh();
+  }
+
+  async updateKra(staffId: string, index: number, field: string, value: any) {
+    const appraisal = await this.ensureAppraisal(staffId);
+    if (!appraisal) return;
+    const kras = [...(appraisal.kras ?? [])];
+    if (!kras[index]) return;
+    kras[index] = { ...kras[index], [field]: field === 'weight_pct' || field === 'rating' ? Number(value) : value };
+    const overall = this.computeWeightedRating(kras);
+    await this.supabaseService.client.from('hr_appraisals').update({ kras, overall_rating: overall }).eq('id', appraisal.id);
+    await this.appraisals.refresh();
+  }
+
+  private computeWeightedRating(kras: any[]): number {
+    const rated = kras.filter((k) => k.rating != null && k.weight_pct > 0);
+    const totalWeight = rated.reduce((sum, k) => sum + k.weight_pct, 0);
+    if (totalWeight === 0) return 0;
+    return rated.reduce((sum, k) => sum + k.rating * k.weight_pct, 0) / totalWeight;
+  }
+
   staffNameFor(staffId: string): string {
     return this.staff.data().find((s: any) => s.id === staffId)?.full_name ?? 'Unknown';
   }
@@ -3665,6 +3856,8 @@ export class HrComponent implements OnDestroy {
     this.trainingRecords.dispose();
     this.jobRequisitions.dispose();
     this.candidates.dispose();
+    this.appraisalCycles.dispose();
+    this.appraisals.dispose();
     this.statutoryRegistrations.dispose();
     this.payrollRuns.dispose();
     this.complianceFilings.dispose();
