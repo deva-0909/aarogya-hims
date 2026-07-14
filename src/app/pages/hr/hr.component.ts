@@ -7,7 +7,7 @@ import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 import { PrintLetterheadComponent } from '../../shared/print-letterhead.component';
 import { AttendanceCaptureComponent, AttendanceCapture } from '../../shared/attendance-capture.component';
 
-type HrTab = 'directory' | 'attendance' | 'roster' | 'onboarding' | 'exit' | 'salary' | 'payroll' | 'revshare' | 'training' | 'letters' | 'orgchart' | 'loans' | 'grievance';
+type HrTab = 'dashboard' | 'directory' | 'attendance' | 'roster' | 'onboarding' | 'exit' | 'salary' | 'payroll' | 'revshare' | 'training' | 'letters' | 'orgchart' | 'loans' | 'grievance';
 
 const LEAVE_TYPES = ['Casual', 'Sick', 'Earned', 'Maternity/Paternity', 'Unpaid'];
 
@@ -253,6 +253,65 @@ function pillStyle(stage: string) {
           [style.border]="'1px solid ' + (activeTab === t.key ? '#0d8c80' : '#dde5ee')">
           <i class="ph {{ t.icon }} text-[14px]"></i>{{ t.label }}
         </button>
+      </div>
+
+      <!-- ================= DASHBOARD ================= -->
+      <div *ngIf="activeTab === 'dashboard'" class="flex flex-col gap-[14px]">
+        <app-kpi-row [items]="dashboardKpis()"></app-kpi-row>
+
+        <div class="text-[11px] text-muted-1 bg-[#f7f9fb] border border-line-1 rounded-[9px] px-3 py-2">
+          Vacancy rate and time-to-hire are deliberately not shown here -- they need sanctioned headcount and
+          requisition-open dates, which this system doesn't track yet (no Recruitment module). Showing a fabricated
+          number would be worse than not showing one.
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-[14px]">
+          <div class="bg-white border border-line-1 rounded-card p-4">
+            <h3 class="font-semibold text-ink-2 text-[13.5px] mb-3">Headcount by Employment Type</h3>
+            <div *ngFor="let row of headcountByType()" class="flex items-center gap-2 mb-2">
+              <span class="text-[11.5px] text-body-1 w-[110px] flex-none truncate">{{ row.label }}</span>
+              <div class="flex-1 h-[18px] bg-line-2 rounded-[5px] overflow-hidden">
+                <div class="h-full bg-brand rounded-[5px]" [style.width.%]="row.pct"></div>
+              </div>
+              <span class="text-[11.5px] font-mono font-semibold text-ink-2 w-[24px] text-right flex-none">{{ row.count }}</span>
+            </div>
+          </div>
+
+          <div class="bg-white border border-line-1 rounded-card p-4">
+            <h3 class="font-semibold text-ink-2 text-[13.5px] mb-3">Headcount by Department</h3>
+            <div *ngFor="let row of headcountByDept()" class="flex items-center gap-2 mb-2">
+              <span class="text-[11.5px] text-body-1 w-[110px] flex-none truncate">{{ row.label }}</span>
+              <div class="flex-1 h-[18px] bg-line-2 rounded-[5px] overflow-hidden">
+                <div class="h-full bg-[#5536c9] rounded-[5px]" [style.width.%]="row.pct"></div>
+              </div>
+              <span class="text-[11.5px] font-mono font-semibold text-ink-2 w-[24px] text-right flex-none">{{ row.count }}</span>
+            </div>
+          </div>
+
+          <div class="bg-white border border-line-1 rounded-card p-4">
+            <h3 class="font-semibold text-ink-2 text-[13.5px] mb-3">Gender Diversity</h3>
+            <div *ngFor="let row of genderBreakdown()" class="flex items-center gap-2 mb-2">
+              <span class="text-[11.5px] text-body-1 w-[110px] flex-none truncate">{{ row.label }}</span>
+              <div class="flex-1 h-[18px] bg-line-2 rounded-[5px] overflow-hidden">
+                <div class="h-full bg-[#946200] rounded-[5px]" [style.width.%]="row.pct"></div>
+              </div>
+              <span class="text-[11.5px] font-mono font-semibold text-ink-2 w-[24px] text-right flex-none">{{ row.count }}</span>
+            </div>
+            <div class="text-[10.5px] text-muted-1 mt-1">{{ genderUnrecordedNote() }}</div>
+          </div>
+
+          <div class="bg-white border border-line-1 rounded-card p-4">
+            <h3 class="font-semibold text-ink-2 text-[13.5px] mb-3">Age Distribution</h3>
+            <div *ngIf="hasNoAgeData()" class="text-[11.5px] text-muted-1">No dates of birth on record yet.</div>
+            <div *ngFor="let row of ageDistribution()" class="flex items-center gap-2 mb-2">
+              <span class="text-[11.5px] text-body-1 w-[110px] flex-none">{{ row.label }}</span>
+              <div class="flex-1 h-[18px] bg-line-2 rounded-[5px] overflow-hidden">
+                <div class="h-full bg-[#0b7d72] rounded-[5px]" [style.width.%]="row.pct"></div>
+              </div>
+              <span class="text-[11.5px] font-mono font-semibold text-ink-2 w-[24px] text-right flex-none">{{ row.count }}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- ================= DIRECTORY ================= -->
@@ -1504,6 +1563,19 @@ function pillStyle(stage: string) {
           <div><label class="block text-xs font-medium text-body-1 mb-1">Monthly salary (₹, optional)</label>
             <input type="number" min="0" [(ngModel)]="staffForm.monthly_salary" name="monthly_salary" placeholder="Needed for accurate exit settlements later"
               class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" /></div>
+          <div class="grid grid-cols-2 gap-2">
+            <div><label class="block text-xs font-medium text-body-1 mb-1">Date of birth (optional)</label>
+              <input type="date" [(ngModel)]="staffForm.date_of_birth" name="date_of_birth"
+                class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand" /></div>
+            <div><label class="block text-xs font-medium text-body-1 mb-1">Gender (optional)</label>
+              <select [(ngModel)]="staffForm.gender" name="gender" class="w-full border border-line-1 rounded-[9px] px-3 py-2 text-sm outline-none focus:border-brand">
+                <option value="">—</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+          </div>
 
           <!-- Live preview: shows exactly how this employee's pay will be
                broken down the moment they're saved -- Basic/HRA/PF/ESI/PT/
@@ -1770,8 +1842,9 @@ export class HrComponent implements OnDestroy {
   shortId = shortId;
   pillStyle = pillStyle;
 
-  activeTab: HrTab = 'directory';
+  activeTab: HrTab = 'dashboard';
   tabs: { key: HrTab; label: string; icon: string }[] = [
+    { key: 'dashboard', label: 'Dashboard', icon: 'ph-gauge' },
     { key: 'directory', label: 'Directory & Leave', icon: 'ph-users-three' },
     { key: 'attendance', label: 'Attendance', icon: 'ph-fingerprint' },
     { key: 'roster', label: 'Duty Roster', icon: 'ph-calendar-check' },
@@ -1806,7 +1879,7 @@ export class HrComponent implements OnDestroy {
   printingLetter: any = null;
 
   leaveForm = { staff_id: '', leave_type: LEAVE_TYPES[0], start_date: '', end_date: '' };
-  staffForm = { full_name: '', title: '', role: '', department: '', phone: '', email: '', employment_type: EMPLOYMENT_TYPES[0], date_of_joining: '', reporting_manager_id: '', monthly_salary: '' };
+  staffForm = { full_name: '', title: '', role: '', department: '', phone: '', email: '', employment_type: EMPLOYMENT_TYPES[0], date_of_joining: '', reporting_manager_id: '', monthly_salary: '', date_of_birth: '', gender: '' };
   onboardForm = { name: '', position: '', dept: '', join_date: '', employment_type: EMPLOYMENT_TYPES[0], monthly_rate: '' };
   exitForm = { staff_id: '', notice_date: '', last_day: '', reason: '' };
   letterForm = { staff_id: '', letter_type: LETTER_TYPES[0], details: '' };
@@ -2044,11 +2117,13 @@ export class HrComponent implements OnDestroy {
         employment_type: this.staffForm.employment_type, date_of_joining: this.staffForm.date_of_joining || null,
         reporting_manager_id: this.staffForm.reporting_manager_id || null,
         monthly_salary: this.staffForm.monthly_salary ? Number(this.staffForm.monthly_salary) : null,
+        date_of_birth: this.staffForm.date_of_birth || null,
+        gender: this.staffForm.gender || null,
         employee_id: 'EMP-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
       });
       if (error) throw error;
       this.showNewStaff = false;
-      this.staffForm = { full_name: '', title: '', role: '', department: '', phone: '', email: '', employment_type: EMPLOYMENT_TYPES[0], date_of_joining: '', reporting_manager_id: '', monthly_salary: '' };
+      this.staffForm = { full_name: '', title: '', role: '', department: '', phone: '', email: '', employment_type: EMPLOYMENT_TYPES[0], date_of_joining: '', reporting_manager_id: '', monthly_salary: '', date_of_birth: '', gender: '' };
       await this.staff.refresh();
     } catch (err: any) {
       this.errorMsg = err.message;
@@ -3173,6 +3248,92 @@ export class HrComponent implements OnDestroy {
     } finally {
       this.submitting = false;
     }
+  }
+
+  // ================= HR DASHBOARD =================
+  // Real attrition rate, trailing 12 months: completed exits / current
+  // active headcount. A true rate would use average headcount over the
+  // period, but this system has no historical headcount snapshots to
+  // compute that from -- using current headcount as the denominator is a
+  // standard, defensible simplification when that data isn't available,
+  // and is noted as such rather than presented as more precise than it is.
+  dashboardKpis(): KpiItem[] {
+    const activeStaff = this.staff.data().filter((s: any) => s.status !== 'Inactive');
+    const yearAgo = new Date();
+    yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+    const yearAgoStr = yearAgo.toISOString().slice(0, 10);
+
+    const completedExitsLast12mo = this.exits.data().filter((e: any) => e.stage === 'Completed' && (e.last_day ?? '') >= yearAgoStr).length;
+    const attritionRate = activeStaff.length > 0 ? Math.round((completedExitsLast12mo / activeStaff.length) * 100) : 0;
+
+    const newHires12mo = this.staff.data().filter((s: any) => (s.date_of_joining ?? '') >= yearAgoStr).length;
+
+    const withTenure = activeStaff.filter((s: any) => s.date_of_joining);
+    const avgTenureYears = withTenure.length > 0
+      ? withTenure.reduce((sum: number, s: any) => sum + (Date.now() - new Date(s.date_of_joining).getTime()) / (365.25 * 86400000), 0) / withTenure.length
+      : 0;
+
+    return [
+      { label: 'Total Active Staff', value: String(activeStaff.length), icon: 'ph-users-three', tintKey: 'blue' },
+      { label: 'New Hires (12mo)', value: String(newHires12mo), icon: 'ph-user-plus', tintKey: 'green' },
+      { label: 'Attrition Rate (12mo, approx.)', value: attritionRate + '%', icon: 'ph-trend-down', tintKey: attritionRate > 15 ? 'red' : 'amber' },
+      { label: 'Avg Tenure (years)', value: avgTenureYears.toFixed(1), icon: 'ph-hourglass-medium', tintKey: 'teal' },
+    ];
+  }
+
+  private breakdownOf(field: string): { label: string; count: number; pct: number }[] {
+    const activeStaff = this.staff.data().filter((s: any) => s.status !== 'Inactive');
+    const counts = new Map<string, number>();
+    for (const s of activeStaff) {
+      const key = s[field] || 'Unspecified';
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const max = Math.max(1, ...counts.values());
+    return Array.from(counts.entries())
+      .map(([label, count]) => ({ label, count, pct: Math.round((count / max) * 100) }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  headcountByType() {
+    return this.breakdownOf('employment_type');
+  }
+
+  headcountByDept() {
+    return this.breakdownOf('department');
+  }
+
+  genderBreakdown() {
+    return this.breakdownOf('gender');
+  }
+
+  genderUnrecordedNote(): string {
+    const total = this.staff.data().filter((s: any) => s.status !== 'Inactive').length;
+    const unrecorded = this.staff.data().filter((s: any) => s.status !== 'Inactive' && !s.gender).length;
+    return unrecorded > 0 ? `${unrecorded} of ${total} staff have no gender recorded.` : '';
+  }
+
+  hasNoAgeData(): boolean {
+    return this.ageDistribution().every((r) => r.count === 0);
+  }
+
+  ageDistribution(): { label: string; count: number; pct: number }[] {
+    const buckets = [
+      { label: '<25', min: 0, max: 25 },
+      { label: '25-34', min: 25, max: 35 },
+      { label: '35-44', min: 35, max: 45 },
+      { label: '45-54', min: 45, max: 55 },
+      { label: '55+', min: 55, max: 200 },
+    ];
+    const activeStaff = this.staff.data().filter((s: any) => s.status !== 'Inactive' && s.date_of_birth);
+    const counts = buckets.map((b) => ({
+      label: b.label,
+      count: activeStaff.filter((s: any) => {
+        const age = (Date.now() - new Date(s.date_of_birth).getTime()) / (365.25 * 86400000);
+        return age >= b.min && age < b.max;
+      }).length,
+    }));
+    const max = Math.max(1, ...counts.map((c) => c.count));
+    return counts.map((c) => ({ ...c, pct: Math.round((c.count / max) * 100) }));
   }
 
   staffNameFor(staffId: string): string {
