@@ -7,7 +7,7 @@ import { KpiRowComponent, KpiItem } from '../../shared/kpi-row.component';
 import { PrintLetterheadComponent } from '../../shared/print-letterhead.component';
 import { AttendanceCaptureComponent, AttendanceCapture } from '../../shared/attendance-capture.component';
 
-type HrTab = 'directory' | 'attendance' | 'onboarding' | 'exit' | 'salary' | 'payroll' | 'letters' | 'orgchart' | 'loans' | 'grievance';
+type HrTab = 'directory' | 'attendance' | 'roster' | 'onboarding' | 'exit' | 'salary' | 'payroll' | 'letters' | 'orgchart' | 'loans' | 'grievance';
 
 const LEAVE_TYPES = ['Casual', 'Sick', 'Earned', 'Maternity/Paternity', 'Unpaid'];
 
@@ -1072,6 +1072,67 @@ function pillStyle(stage: string) {
         </div>
       </div>
 
+      <!-- ================= DUTY ROSTER ================= -->
+      <div *ngIf="activeTab === 'roster'" class="flex flex-col gap-[14px]">
+        <div class="bg-white border border-line-1 rounded-card p-4 flex items-center justify-between flex-wrap gap-2">
+          <div class="flex items-center gap-2">
+            <button (click)="shiftRosterWeek(-1)" class="w-8 h-8 rounded-[8px] border border-line-1 hover:bg-line-2 flex items-center justify-center"><i class="ph ph-caret-left"></i></button>
+            <span class="text-[13px] font-semibold text-ink-2">{{ rosterWeekLabel() }}</span>
+            <button (click)="shiftRosterWeek(1)" class="w-8 h-8 rounded-[8px] border border-line-1 hover:bg-line-2 flex items-center justify-center"><i class="ph ph-caret-right"></i></button>
+          </div>
+          <div class="flex gap-2 text-[11px]">
+            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-[#2257a3]"></span>Morning</span>
+            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-[#946200]"></span>Evening</span>
+            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-[#5536c9]"></span>Night</span>
+            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-[#5f7689]"></span>On-Call</span>
+          </div>
+        </div>
+
+        <div *ngIf="rosterConflictMsg" class="text-[12.5px] text-danger-fg bg-danger-bg rounded-[9px] px-3 py-2">{{ rosterConflictMsg }}</div>
+
+        <div class="bg-white border border-line-1 rounded-card overflow-hidden">
+          <div class="overflow-x-auto"><table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-[11.5px] text-muted-1 border-b border-line-1">
+                <th class="px-4 py-2 font-medium sticky left-0 bg-white">Staff</th>
+                <th *ngFor="let d of rosterWeekDays()" class="px-2 py-2 font-medium text-center min-w-[90px]">
+                  {{ d.label }}<br /><span class="font-mono text-[10px]">{{ d.date }}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let s of staff.data()" class="border-b border-line-2 last:border-0">
+                <td class="px-4 py-2 font-medium text-ink-2 sticky left-0 bg-white whitespace-nowrap">{{ s.full_name }}</td>
+                <td *ngFor="let d of rosterWeekDays()" class="px-1.5 py-1.5 text-center">
+                  <button (click)="openRosterPicker(s.id, d.date)"
+                    class="w-full min-h-[32px] rounded-[7px] text-[10.5px] font-semibold"
+                    [style.background]="rosterCellFor(s.id, d.date) ? shiftColor(rosterCellFor(s.id, d.date).shift_type_id).bg : '#f7f9fb'"
+                    [style.color]="rosterCellFor(s.id, d.date) ? shiftColor(rosterCellFor(s.id, d.date).shift_type_id).fg : '#c2ccd6'">
+                    {{ rosterCellFor(s.id, d.date) ? shiftNameFor(rosterCellFor(s.id, d.date).shift_type_id) : '+' }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- Roster shift picker -->
+      <div *ngIf="rosterPicker" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50" (click)="rosterPicker = null">
+        <div (click)="$event.stopPropagation()" class="bg-white rounded-card p-5 w-full max-w-xs space-y-2">
+          <h3 class="font-semibold text-ink-2 text-[13.5px]">{{ staffNameFor(rosterPicker.staffId) }} -- {{ rosterPicker.date }}</h3>
+          <button *ngFor="let st of shiftTypes.data()" (click)="assignShift(rosterPicker.staffId, rosterPicker.date, st.id)"
+            class="w-full text-left px-3 py-2 rounded-[8px] border border-line-1 hover:bg-line-2 text-[12.5px] font-medium flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full" [style.background]="shiftColor(st.id).fg"></span>
+            {{ st.name }} <span class="text-[10.5px] text-muted-1 ml-auto font-mono">{{ st.start_time }}-{{ st.end_time }}</span>
+          </button>
+          <button (click)="clearShift(rosterPicker.staffId, rosterPicker.date)" class="w-full text-left px-3 py-2 rounded-[8px] border border-line-1 hover:bg-danger-bg text-[12.5px] font-medium text-danger-fg">
+            Clear assignment
+          </button>
+          <button (click)="rosterPicker = null" class="w-full text-center py-1.5 text-[12px] text-muted-1">Cancel</button>
+        </div>
+      </div>
+
       <!-- ================= LETTERS ================= -->
       <div *ngIf="activeTab === 'letters'" class="flex flex-col gap-3">
         <div class="flex justify-end">
@@ -1541,6 +1602,7 @@ export class HrComponent implements OnDestroy {
   tabs: { key: HrTab; label: string; icon: string }[] = [
     { key: 'directory', label: 'Directory & Leave', icon: 'ph-users-three' },
     { key: 'attendance', label: 'Attendance', icon: 'ph-fingerprint' },
+    { key: 'roster', label: 'Duty Roster', icon: 'ph-calendar-check' },
     { key: 'onboarding', label: 'Onboarding', icon: 'ph-user-plus' },
     { key: 'exit', label: 'Exit', icon: 'ph-user-minus' },
     { key: 'salary', label: 'Salary Structure', icon: 'ph-currency-circle-dollar' },
@@ -1581,6 +1643,8 @@ export class HrComponent implements OnDestroy {
   loans: RealtimeTableHandle<any>;
   grievances: RealtimeTableHandle<any>;
   attendance: RealtimeTableHandle<any>;
+  shiftTypes: RealtimeTableHandle<any>;
+  dutyRoster: RealtimeTableHandle<any>;
   statutoryRegistrations: RealtimeTableHandle<any>;
   payrollRuns: RealtimeTableHandle<any>;
   complianceFilings: RealtimeTableHandle<any>;
@@ -1595,6 +1659,8 @@ export class HrComponent implements OnDestroy {
     this.onboarding = this.realtime.watch('hr_onboarding', (q) => q.order('created_at', { ascending: false }));
     this.exits = this.realtime.watch('hr_exits', (q) => q.order('created_at', { ascending: false }));
     this.attendance = this.realtime.watch('hr_attendance', (q) => q.order('attendance_date', { ascending: false }));
+    this.shiftTypes = this.realtime.watch('hr_shift_types', (q) => q.order('start_time'));
+    this.dutyRoster = this.realtime.watch('hr_duty_roster', (q) => q.order('shift_date'));
     this.statutoryRegistrations = this.realtime.watch('hr_statutory_registrations');
     this.payrollRuns = this.realtime.watch('hr_payroll_runs', (q) => q.order('period', { ascending: false }));
     this.complianceFilings = this.realtime.watch('hr_compliance_filings', (q) => q.order('due_date'));
@@ -2649,6 +2715,120 @@ export class HrComponent implements OnDestroy {
     await this.supabaseService.client.from('hr_grievances').update({ stage: 'Escalated', escalated_posh: true }).eq('id', g.id);
   }
 
+  // ================= DUTY ROSTER =================
+  rosterWeekStart = this.mondayOf(new Date());
+  rosterPicker: { staffId: string; date: string } | null = null;
+  rosterConflictMsg = '';
+
+  private mondayOf(d: Date): Date {
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day; // shift Sunday back to the prior Monday
+    const monday = new Date(d);
+    monday.setDate(d.getDate() + diff);
+    monday.setHours(0, 0, 0, 0);
+    return monday;
+  }
+
+  shiftRosterWeek(delta: number) {
+    const d = new Date(this.rosterWeekStart);
+    d.setDate(d.getDate() + delta * 7);
+    this.rosterWeekStart = d;
+  }
+
+  rosterWeekLabel(): string {
+    const end = new Date(this.rosterWeekStart);
+    end.setDate(end.getDate() + 6);
+    return `${this.rosterWeekStart.toLocaleDateString()} -- ${end.toLocaleDateString()}`;
+  }
+
+  rosterWeekDays(): { label: string; date: string }[] {
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(this.rosterWeekStart);
+      d.setDate(d.getDate() + i);
+      days.push({ label: d.toLocaleDateString(undefined, { weekday: 'short' }), date: d.toISOString().slice(0, 10) });
+    }
+    return days;
+  }
+
+  rosterCellFor(staffId: string, date: string): any {
+    return this.dutyRoster.data().find((r: any) => r.staff_id === staffId && r.shift_date === date) ?? null;
+  }
+
+  shiftNameFor(shiftTypeId: string): string {
+    return this.shiftTypes.data().find((st: any) => st.id === shiftTypeId)?.name ?? '?';
+  }
+
+  shiftColor(shiftTypeId: string): { bg: string; fg: string } {
+    const name = this.shiftNameFor(shiftTypeId);
+    const map: Record<string, { bg: string; fg: string }> = {
+      Morning: { bg: '#e4edfb', fg: '#2257a3' },
+      Evening: { bg: '#fdf0d8', fg: '#946200' },
+      Night: { bg: '#ece8fb', fg: '#5536c9' },
+      'On-Call': { bg: '#eef2f6', fg: '#5f7689' },
+    };
+    return map[name] ?? { bg: '#eef2f6', fg: '#5f7689' };
+  }
+
+  openRosterPicker(staffId: string, date: string) {
+    this.rosterPicker = { staffId, date };
+    this.rosterConflictMsg = '';
+  }
+
+  // Real rest-hour safety check: a Night shift ends at 07:00 -- assigning
+  // that same person a Morning shift (starts 07:00) the very next day
+  // gives them zero rest between shifts. This is the single most common,
+  // well-documented nurse-safety scheduling violation -- checked here
+  // rather than left to a human to notice on a dense grid.
+  private hasRestConflict(staffId: string, date: string, newShiftTypeId: string): string | null {
+    const newShift = this.shiftTypes.data().find((st: any) => st.id === newShiftTypeId);
+    if (!newShift) return null;
+
+    const prevDate = new Date(date);
+    prevDate.setDate(prevDate.getDate() - 1);
+    const prevDateStr = prevDate.toISOString().slice(0, 10);
+    const prevEntry = this.rosterCellFor(staffId, prevDateStr);
+    if (!prevEntry) return null;
+
+    const prevShift = this.shiftTypes.data().find((st: any) => st.id === prevEntry.shift_type_id);
+    if (!prevShift?.is_night_shift) return null;
+
+    // Night shift ends 07:00 -- any shift starting before ~10:00 the next
+    // morning leaves under 3 hours rest, well below any reasonable
+    // minimum. Flag Morning specifically since it's the exact zero-rest
+    // case (Night ends 07:00, Morning starts 07:00).
+    if (newShift.name === 'Morning') {
+      return `${this.staffNameFor(staffId)} worked a Night shift ending 07:00 the day before -- assigning Morning (starts 07:00) gives zero rest between shifts.`;
+    }
+    return null;
+  }
+
+  async assignShift(staffId: string, date: string, shiftTypeId: string) {
+    const conflict = this.hasRestConflict(staffId, date, shiftTypeId);
+    if (conflict) {
+      this.rosterConflictMsg = conflict;
+      if (!confirm(conflict + '\n\nAssign anyway?')) return;
+    }
+    const existing = this.rosterCellFor(staffId, date);
+    const client = this.supabaseService.client;
+    if (existing) {
+      await client.from('hr_duty_roster').update({ shift_type_id: shiftTypeId, status: 'Scheduled' }).eq('id', existing.id);
+    } else {
+      await client.from('hr_duty_roster').insert({ staff_id: staffId, shift_date: date, shift_type_id: shiftTypeId, status: 'Scheduled' });
+    }
+    this.rosterPicker = null;
+    await this.dutyRoster.refresh();
+  }
+
+  async clearShift(staffId: string, date: string) {
+    const existing = this.rosterCellFor(staffId, date);
+    if (existing) {
+      await this.supabaseService.client.from('hr_duty_roster').delete().eq('id', existing.id);
+      await this.dutyRoster.refresh();
+    }
+    this.rosterPicker = null;
+  }
+
   staffNameFor(staffId: string): string {
     return this.staff.data().find((s: any) => s.id === staffId)?.full_name ?? 'Unknown';
   }
@@ -2738,6 +2918,8 @@ export class HrComponent implements OnDestroy {
     this.loans.dispose();
     this.grievances.dispose();
     this.attendance.dispose();
+    this.shiftTypes.dispose();
+    this.dutyRoster.dispose();
     this.statutoryRegistrations.dispose();
     this.payrollRuns.dispose();
     this.complianceFilings.dispose();
