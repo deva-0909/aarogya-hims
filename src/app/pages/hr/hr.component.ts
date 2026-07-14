@@ -117,6 +117,39 @@ interface StatutoryBreakdown {
 // February +Rs 100 adjustment (Rs 200 x 11 months + Rs 300 in February).
 // Maharashtra specifically exempts women earning up to Rs 25,000/month --
 // a real, material, commonly-missed exemption, not a rounding footnote.
+// Night Duty Allowance (NDA), per the Govt of India IVth Pay Commission
+// circular (4 Oct 1989), still the reference formula real Indian hospitals
+// use: night duty = between 22:00 and 06:00, weighted at 10 minutes
+// credited for every hour of night duty actually performed, converted to
+// pay at the employee's hourly Basic rate, capped at Rs 2,200/month.
+// Standard month is taken as 208 hours (26 days x 8 hours) -- the same
+// assumption real payroll systems use for hourly-rate derivation.
+const NDA_MONTHLY_CEILING = 2200;
+const STANDARD_MONTHLY_HOURS = 208;
+
+// Statutory Bonus (Payment of Bonus Act 1965). Two SEPARATE ceilings that
+// are easy to conflate: eligibility ceiling Rs 21,000/month (Basic+DA) --
+// above this, no bonus is owed at all; calculation ceiling Rs 7,000/month
+// -- bonus is computed on the LOWER of actual Basic+DA or Rs 7,000, even
+// for someone earning, say, Rs 18,000 (eligible, but bonus still capped
+// at the Rs 7,000 base). Minimum rate 8.33%, maximum 20%, decided
+// annually based on profitability -- not tied to PF/ESI/gratuity at all.
+const BONUS_ELIGIBILITY_CEILING = 21000;
+const BONUS_CALCULATION_CEILING = 7000;
+
+function computeStatutoryBonus(basic: number, ratePct: number): { eligible: boolean; annualBonus: number } {
+  if (basic > BONUS_ELIGIBILITY_CEILING) return { eligible: false, annualBonus: 0 };
+  const calcBase = Math.min(basic, BONUS_CALCULATION_CEILING);
+  const annualBonus = Math.round(calcBase * 12 * (ratePct / 100));
+  return { eligible: true, annualBonus };
+}
+
+function computeNightDutyAllowance(nightDutyHoursThisMonth: number, basic: number): number {
+  const weightedHours = nightDutyHoursThisMonth * (10 / 60); // 10 min credited per hour worked
+  const hourlyRate = basic / STANDARD_MONTHLY_HOURS;
+  return Math.min(Math.round(weightedHours * hourlyRate), NDA_MONTHLY_CEILING);
+}
+
 function computeMaharashtraPT(grossMonthly: number, gender: string | null, isFebruary: boolean): number {
   if (gender === 'Female' && grossMonthly <= 25000) return 0;
   if (grossMonthly <= 7500) return 0;
@@ -983,6 +1016,60 @@ function pillStyle(stage: string) {
             </tbody>
           </table></div>
         </div>
+
+        <!-- Statutory Bonus (Payment of Bonus Act 1965) -->
+        <div class="bg-white border border-[#e7ecf2] rounded-[14px] overflow-hidden">
+          <div class="px-[18px] py-[14px] border-b border-[#eef2f6]">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <h3 class="m-0 text-[14px] font-semibold text-[#1c3a4d]">Statutory Bonus -- Annual</h3>
+                <div class="text-[12px] text-[#8094a6] mt-[3px]">
+                  Eligibility ceiling ₹21,000/month Basic -- calculation capped at ₹7,000/month regardless of actual Basic. Due within 8 months of financial year end (30 Nov for an April-March year).
+                </div>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <label class="text-[11px] text-muted-1">Rate %</label>
+                <input type="number" min="8.33" max="20" step="0.01" [ngModel]="statutoryRegistrations.data()[0]?.statutory_bonus_rate_pct"
+                  (ngModelChange)="updateBonusRate($event)" class="w-[70px] px-2 py-1 border border-line-1 rounded-[7px] text-[12px] font-mono" />
+              </div>
+            </div>
+            <div class="text-[11px] text-warning-fg bg-warning-bg rounded-[7px] px-[10px] py-[7px] mt-[9px]">
+              <b>Verify applicability:</b> some interpretations exempt hospitals under Section 32 of the Act depending on
+              structure (charitable trust vs. corporate entity) -- confirm with labour law counsel before relying on this figure.
+            </div>
+          </div>
+          <div class="overflow-x-auto"><table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-[11.5px] text-muted-1 border-b border-line-1">
+                <th class="px-4 py-2 font-medium">Name</th>
+                <th class="px-4 py-2 font-medium">Basic (Monthly)</th>
+                <th class="px-4 py-2 font-medium">Eligible</th>
+                <th class="px-4 py-2 font-medium">Annual Bonus</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngIf="statutoryBonusRoster().length === 0">
+                <td colspan="4" class="px-4 py-6 text-center text-body-2">No staff with recorded salary yet.</td>
+              </tr>
+              <tr *ngFor="let r of statutoryBonusRoster()" class="border-b border-line-2 last:border-0">
+                <td class="px-4 py-2 font-medium text-ink-2">{{ r.name }}</td>
+                <td class="px-4 py-2 font-mono text-[12.5px] text-body-1">₹{{ r.basic | number }}</td>
+                <td class="px-4 py-2">
+                  <span class="px-2 py-0.5 rounded-pill text-[11px] font-semibold" [class]="r.eligible ? 'bg-success-bg text-success-fg' : 'bg-line-2 text-body-2'">
+                    {{ r.eligible ? 'Yes' : 'No' }}
+                  </span>
+                </td>
+                <td class="px-4 py-2 font-mono text-[12.5px] font-semibold text-ink-2">{{ r.eligible ? '₹' + (r.annualBonus | number) : '—' }}</td>
+              </tr>
+            </tbody>
+            <tfoot *ngIf="statutoryBonusRoster().length > 0">
+              <tr class="border-t-2 border-line-1">
+                <td colspan="3" class="px-4 py-2 font-semibold text-ink-2">Total Annual Bonus Liability</td>
+                <td class="px-4 py-2 font-mono font-bold text-ink-2">₹{{ statutoryBonusTotal() | number }}</td>
+              </tr>
+            </tfoot>
+          </table></div>
+        </div>
       </div>
 
       <!-- ================= LETTERS ================= -->
@@ -1243,6 +1330,7 @@ function pillStyle(stage: string) {
               <div *ngIf="p.monthly_salary != null" class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[12.5px]">
                 <div><div class="text-muted-1 text-[10.5px]">Monthly CTC</div><div class="font-mono font-semibold text-ink-2">₹{{ p.monthly_salary | number }}</div></div>
                 <div><div class="text-muted-1 text-[10.5px]">Net Pay</div><div class="font-mono font-semibold text-success-fg">₹{{ netPayFor(p) | number }}</div></div>
+                <div *ngIf="isNursingStaff(p)"><div class="text-muted-1 text-[10.5px]">Night Duty Allowance ({{ currentPeriod() }})</div><div class="font-mono font-semibold text-ink-2">₹{{ nightDutyAllowanceFor(p) | number }} <span class="text-[10.5px] text-muted-1 font-normal">({{ nightDutyHoursThisMonth(p.id).toFixed(1) }}h)</span></div></div>
                 <div><div class="text-muted-1 text-[10.5px]">PF UAN</div><div class="font-mono text-body-1">{{ p.pf_uan || '—' }}</div></div>
                 <div><div class="text-muted-1 text-[10.5px]">ESI No.</div><div class="font-mono text-body-1">{{ p.esi_number || '—' }}</div></div>
                 <div><div class="text-muted-1 text-[10.5px]">Bank A/C</div><div class="font-mono text-body-1">{{ maskAccount(p.bank_account_number) }}</div></div>
@@ -2117,6 +2205,31 @@ export class HrComponent implements OnDestroy {
     });
   }
 
+  // ================= STATUTORY BONUS =================
+  statutoryBonusRoster(): { name: string; basic: number; eligible: boolean; annualBonus: number }[] {
+    const reg = this.statutoryRegistrations.data()[0];
+    const ratePct = Number(reg?.statutory_bonus_rate_pct) || 8.33;
+    return this.staff.data()
+      .filter((s: any) => s.monthly_salary != null)
+      .map((s: any) => {
+        const structure = this.salaryStructures.data().find((r: any) => r.employment_type === s.employment_type);
+        const basic = structure ? Number(s.monthly_salary) * (Number(structure.basic_pct) / 100) : 0;
+        const result = computeStatutoryBonus(basic, ratePct);
+        return { name: s.full_name, basic, eligible: result.eligible, annualBonus: result.annualBonus };
+      });
+  }
+
+  statutoryBonusTotal(): number {
+    return this.statutoryBonusRoster().filter((r) => r.eligible).reduce((sum, r) => sum + r.annualBonus, 0);
+  }
+
+  async updateBonusRate(value: string) {
+    const reg = this.statutoryRegistrations.data()[0];
+    if (!reg) return;
+    await this.supabaseService.client.from('hr_statutory_registrations').update({ statutory_bonus_rate_pct: Number(value) || 8.33 }).eq('id', reg.id);
+    await this.statutoryRegistrations.refresh();
+  }
+
   async markFiled(item: any) {
     const client = this.supabaseService.client;
     if (item.existing) {
@@ -2137,11 +2250,55 @@ export class HrComponent implements OnDestroy {
 
   // Real Net Pay for a specific employee, using their actual salary,
   // employment type's structure, and their own gender (for accurate PT).
+  // Real night-duty hours this month, computed from actual attendance
+  // check-in/check-out timestamps -- only counts the portion of a shift
+  // that falls within the 22:00-06:00 window, matching the Pay
+  // Commission's definition of "night duty" exactly rather than crediting
+  // an entire long shift that merely starts or ends near that window.
+  isNursingStaff(s: any): boolean {
+    return (s.title ?? '').toLowerCase().includes('nurse');
+  }
+
+  nightDutyHoursThisMonth(staffId: string): number {
+    const period = this.currentPeriod();
+    const records = this.attendance.data().filter((a: any) =>
+      a.staff_id === staffId && (a.attendance_date ?? '').startsWith(period) && a.check_in_at && a.check_out_at
+    );
+    let totalHours = 0;
+    for (const a of records) {
+      const checkIn = new Date(a.check_in_at);
+      const checkOut = new Date(a.check_out_at);
+      // Night window for that shift's date: 22:00 the day before through
+      // 06:00 the shift date -- covers overnight shifts correctly.
+      const nightStart = new Date(checkIn);
+      nightStart.setHours(22, 0, 0, 0);
+      if (checkIn.getHours() < 6) nightStart.setDate(nightStart.getDate() - 1);
+      const nightEnd = new Date(nightStart);
+      nightEnd.setHours(nightStart.getHours() + 8); // 22:00 -> 06:00 is 8 hours
+
+      const overlapStart = Math.max(checkIn.getTime(), nightStart.getTime());
+      const overlapEnd = Math.min(checkOut.getTime(), nightEnd.getTime());
+      if (overlapEnd > overlapStart) totalHours += (overlapEnd - overlapStart) / 3600000;
+    }
+    return totalHours;
+  }
+
+  nightDutyAllowanceFor(s: any): number {
+    const structure = this.salaryStructures.data().find((r: any) => r.employment_type === s.employment_type);
+    if (!structure || s.monthly_salary == null) return 0;
+    const d = computeStatutoryDeductions(Number(s.monthly_salary), structure, s.gender);
+    return computeNightDutyAllowance(this.nightDutyHoursThisMonth(s.id), d.basic);
+  }
+
   netPayFor(s: any): number {
     const structure = this.salaryStructures.data().find((r: any) => r.employment_type === s.employment_type);
     if (!structure || s.monthly_salary == null) return 0;
     const d = computeStatutoryDeductions(Number(s.monthly_salary), structure, s.gender);
-    return Number(s.monthly_salary) - d.employeePF - d.employeeESI - d.professionalTax;
+    let nda = 0;
+    if (this.isNursingStaff(s)) {
+      nda = computeNightDutyAllowance(this.nightDutyHoursThisMonth(s.id), d.basic);
+    }
+    return Number(s.monthly_salary) + nda - d.employeePF - d.employeeESI - d.professionalTax;
   }
 
   printingPayslip: any = null;
